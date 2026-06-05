@@ -1,82 +1,78 @@
 /* QUARK — 비서 콘솔 + 빠른 메모.
- * 응답 생성부는 더미(pickReply) 유지 — 추후 hooks/useQuarkChat.ts(SSE)로 교체 쉽게 분리. */
+ * 응답은 hooks/useQuarkChat.ts(백엔드 SSE)로 실시간 스트리밍한다.
+ * onCommand(homeStore)는 IoT 화면의 낙관적 UI 동기화를 위해 유지. */
 import { useEffect, useRef, useState } from 'react';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { useHomeStore } from '@/stores/homeStore';
-import { QDATA } from '@/data/quarkData';
+import { useQuarkChat } from '@/hooks/useQuarkChat';
 import mascot from '@/assets/quark-mascot.png';
 
 const QC_SUGGEST = ['쿼크, 불 꺼줘', '쿼크, 오늘 일정 어때', '쿼크, 아이디어 있어', '쿼크, 물 마실 시간이야?'];
+const GREETING = '안녕 쿼딩! 뭐든 물어봐 — 집 기기 제어도 되고, 그냥 궁금한 것도 좋아 🦫';
 
-interface ChatMsg {
-  who: 'q' | 'me';
-  text: string;
-}
-
-function pickReply(t: string): string {
-  if (/불|조명|꺼|라이트/.test(t)) return QDATA.quarkReplies[0];
-  if (/일정|스케줄|약속/.test(t)) return QDATA.quarkReplies[1];
-  if (/아이디어|생각|메모/.test(t)) return QDATA.quarkReplies[2];
-  if (/에어컨|냉방|더워|시원/.test(t)) return QDATA.quarkReplies[3];
-  if (/물|수분|마실/.test(t)) return QDATA.quarkReplies[4];
-  if (/서버|상태|cpu|온도/i.test(t)) return QDATA.quarkReplies[5];
-  if (/취침|잘|자|불끄고/.test(t)) return QDATA.quarkReplies[6];
-  return '응, 접수했어! 그건 곧 처리할게 — 더 필요한 거 있으면 언제든 불러 🦫';
+function Avatar() {
+  return (
+    <div className="qc-ava">
+      <img className="pixelated" src={mascot} alt="쿼크" />
+    </div>
+  );
 }
 
 export function QuarkConsole() {
   const onCommand = useHomeStore((s) => s.handleCommand);
-  const [msgs, setMsgs] = useState<ChatMsg[]>([
-    {
-      who: 'q',
-      text: '좋은 아침이야 쿼딩! ☀️ 어제보다 1.5도 따뜻해. 오늘 일정 4개 잡혀있고, 식물은 물 줄 때 됐어. 뭐부터 도와줄까?',
-    },
-  ]);
+  const { messages, streaming, error, send: sendChat } = useQuarkChat();
   const [val, setVal] = useState('');
-  const [typing, setTyping] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
-  }, [msgs, typing]);
+  }, [messages, streaming]);
 
   const send = (text?: string) => {
     const t = (text || val).trim();
-    if (!t) return;
-    setMsgs((m) => [...m, { who: 'me', text: t }]);
+    if (!t || streaming) return;
     setVal('');
-    setTyping(true);
-    onCommand(t);
-    const reply = pickReply(t);
-    setTimeout(() => {
-      setTyping(false);
-      setMsgs((m) => [...m, { who: 'q', text: reply }]);
-    }, 750 + Math.random() * 500);
+    onCommand(t); // 낙관적 IoT UI 동기화 (실제 제어는 백엔드 에이전트가 MQTT로 수행)
+    void sendChat(t);
   };
+
+  // 스트림 시작 직후의 빈 assistant 말풍선은 타이핑 인디케이터로 대체
+  const visible = messages.filter((m) => !(m.role === 'assistant' && m.content === ''));
+  const awaitingFirstToken =
+    streaming &&
+    messages.length > 0 &&
+    messages[messages.length - 1].role === 'assistant' &&
+    messages[messages.length - 1].content === '';
 
   return (
     <div className="card s8" style={{ minHeight: 340 }}>
-      <CardHead icon="mic" title="쿼크에게 말하기" meta="QUARK · 대기 중" metaAcc />
+      <CardHead
+        icon="mic"
+        title="쿼크에게 말하기"
+        meta={streaming ? 'QUARK · 생각 중…' : 'QUARK · 대기 중'}
+        metaAcc
+      />
       <div className="qc-stream scroll" ref={streamRef}>
-        {msgs.map((m, i) => (
-          <div key={i} className={'qc-msg ' + (m.who === 'me' ? 'me' : 'q')}>
-            {m.who === 'q' && (
-              <div className="qc-ava">
-                <img className="pixelated" src={mascot} alt="쿼크" />
-              </div>
-            )}
+        <div className="qc-msg q">
+          <Avatar />
+          <div className="qc-bub">
+            <div className="qc-who">쿼크 · QUARK</div>
+            {GREETING}
+          </div>
+        </div>
+        {visible.map((m) => (
+          <div key={m.id} className={'qc-msg ' + (m.role === 'user' ? 'me' : 'q')}>
+            {m.role === 'assistant' && <Avatar />}
             <div className="qc-bub">
-              {m.who === 'q' && <div className="qc-who">쿼크 · QUARK</div>}
-              {m.text}
+              {m.role === 'assistant' && <div className="qc-who">쿼크 · QUARK</div>}
+              {m.content}
             </div>
           </div>
         ))}
-        {typing && (
+        {awaitingFirstToken && (
           <div className="qc-msg q">
-            <div className="qc-ava">
-              <img className="pixelated" src={mascot} alt="쿼크" />
-            </div>
+            <Avatar />
             <div className="qc-bub">
               <span className="qc-typing">
                 <i />
@@ -86,10 +82,18 @@ export function QuarkConsole() {
             </div>
           </div>
         )}
+        {error && (
+          <div className="qc-msg q">
+            <Avatar />
+            <div className="qc-bub">
+              <div className="qc-who">쿼크 · QUARK</div>⚠️ 연결 오류: {error}
+            </div>
+          </div>
+        )}
       </div>
       <div className="qc-suggest">
         {QC_SUGGEST.map((s) => (
-          <button key={s} className="qc-chip" onClick={() => send(s)}>
+          <button key={s} className="qc-chip" onClick={() => send(s)} disabled={streaming}>
             {s}
           </button>
         ))}
