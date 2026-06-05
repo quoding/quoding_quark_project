@@ -1,6 +1,8 @@
 """Model metadata, agent import-without-key, and the fast-path rule router."""
 from __future__ import annotations
 
+import pytest
+
 from app.core.config import get_settings
 from app.core.database import Base
 from app.services.mqtt_bridge import MqttMessage
@@ -19,12 +21,17 @@ def test_agent_memories_column_name() -> None:
     assert "embedding" in cols
 
 
-def test_agent_importable_without_live_key() -> None:
-    # No live OpenAI key in the test environment.
-    assert get_settings().openai_api_key == ""
-    from app.agents.quark_agent import quark_agent
+def test_agent_importable_without_live_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With no secret file and no env var, the key resolves empty — import still works.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().openai_api_key == ""
+        from app.agents.quark_agent import quark_agent
 
-    assert quark_agent is not None
+        assert quark_agent is not None
+    finally:
+        get_settings.cache_clear()
 
 
 async def test_rule_router_low_moisture_triggers() -> None:

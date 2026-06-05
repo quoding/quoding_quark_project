@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -49,7 +50,8 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def openai_api_key(self) -> str:
-        return _read_secret("openai_api_key") or ""
+        # Prefer a Docker secret; fall back to OPENAI_API_KEY from .env / environment.
+        return _read_secret("openai_api_key") or os.environ.get("OPENAI_API_KEY", "")
 
     @computed_field  # type: ignore[prop-decorator]
     @property
