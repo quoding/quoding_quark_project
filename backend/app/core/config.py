@@ -46,43 +46,43 @@ class Settings(BaseSettings):
     discord_channel_id: str = ""
 
     # ── Secrets (Docker Secrets or env fallback) ────────────────────────────
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def openai_api_key(self) -> str:
         return _read_secret("openai_api_key") or ""
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def postgres_user(self) -> str:
         return _read_secret("postgres_user") or "quark"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def postgres_password(self) -> str:
         return _read_secret("postgres_password") or "quark"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def redis_password(self) -> str:
         return _read_secret("redis_password") or ""
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def mqtt_user(self) -> str:
         return _read_secret("mqtt_user") or "quark"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def mqtt_password(self) -> str:
         return _read_secret("mosquitto_password") or ""
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def discord_token(self) -> str:
         return _read_secret("discord_token") or ""
 
     # ── Derived DSNs ────────────────────────────────────────────────────────
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
         u = self.postgres_user
@@ -92,7 +92,7 @@ class Settings(BaseSettings):
         db = self.postgres_db
         return f"postgresql+asyncpg://{u}:{p}@{h}:{port}/{db}"
 
-    @computed_field  # type: ignore[misc]
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def redis_url(self) -> str:
         pw = f":{self.redis_password}@" if self.redis_password else ""

@@ -3,9 +3,13 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
+from app.models.device import Device
 from app.services.mqtt_bridge import mqtt_bridge
 
 logger = logging.getLogger(__name__)
@@ -19,12 +23,17 @@ class CommandRequest(BaseModel):
 
 
 @router.post("/cmd")
-async def send_command(req: CommandRequest) -> dict:
+async def send_command(req: CommandRequest) -> dict[str, Any]:
+    """Publish a device command to MQTT (quark/cmd/{device}/{metric})."""
     await mqtt_bridge.cmd(req.device_id, req.metric, req.value)
     return {"status": "sent", "device": req.device_id, "metric": req.metric}
 
 
-@router.get("/")
-async def list_devices() -> dict:
-    # TODO: fetch from DB device registry
-    return {"devices": []}
+@router.get("")
+async def list_devices(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, list[dict[str, Any]]]:
+    """Return the device registry from the DB (empty list when none registered)."""
+    result = await db.execute(select(Device))
+    devices = result.scalars().all()
+    return {"devices": [d.as_dict() for d in devices]}

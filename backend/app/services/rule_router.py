@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.services.mqtt_bridge import MqttMessage, mqtt_bridge
@@ -39,7 +39,6 @@ class RuleRouter:
 
     def load_defaults(self) -> None:
         """Register built-in rules."""
-        from app.services.mqtt_bridge import mqtt_bridge as bridge
 
         # Example: low moisture → log warning
         async def _low_moisture_alert(msg: MqttMessage) -> None:

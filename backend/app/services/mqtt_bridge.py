@@ -58,17 +58,23 @@ class MqttBridge:
                     await client.subscribe(f"{TOPIC_PREFIX}/#", qos=1)
                     logger.info("MQTT connected — subscribed to %s/#", TOPIC_PREFIX)
 
-                    async for message in client.messages:
-                        try:
-                            raw = message.payload.decode()
+                    async with client.messages() as messages:
+                        async for message in messages:
                             try:
-                                payload = json.loads(raw)
-                            except json.JSONDecodeError:
-                                payload = raw
-                            msg = MqttMessage(topic=str(message.topic), payload=payload)
-                            await self._dispatch(msg)
-                        except Exception:
-                            logger.exception("Error processing MQTT message")
+                                raw_payload = message.payload
+                                raw = (
+                                    raw_payload.decode()
+                                    if isinstance(raw_payload, bytes)
+                                    else str(raw_payload)
+                                )
+                                try:
+                                    payload = json.loads(raw)
+                                except json.JSONDecodeError:
+                                    payload = raw
+                                msg = MqttMessage(topic=str(message.topic), payload=payload)
+                                await self._dispatch(msg)
+                            except Exception:
+                                logger.exception("Error processing MQTT message")
 
             except aiomqtt.MqttError as exc:
                 logger.warning("MQTT disconnected: %s — reconnecting in 5s", exc)
