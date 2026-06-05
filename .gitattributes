@@ -1,0 +1,5 @@
+# N100 (Linux)에 배포하므로 LF 강제
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.svg text eol=lf

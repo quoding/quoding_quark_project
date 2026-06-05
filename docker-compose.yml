@@ -1,0 +1,158 @@
+services:
+  quark-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quark-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=quark-postgres
+      - REDIS_HOST=quark-redis
+      - MQTT_HOST=quark-mosquitto
+    volumes:
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      quark-postgres:
+        condition: service_healthy
+      quark-redis:
+        condition: service_healthy
+      quark-mosquitto:
+        condition: service_started
+    networks:
+      - quark-internal
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  quark-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quark-frontend
+    restart: unless-stopped
+    networks:
+      - quark-internal
+    expose:
+      - "80"
+    depends_on:
+      - quark-api
+
+  quark-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: quark-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: quark
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./secrets/postgres_user:/run/secrets/postgres_user:ro
+      - ./secrets/postgres_password:/run/secrets/postgres_password:ro
+    networks:
+      - quark-internal
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$(cat /run/secrets/postgres_user) -d quark"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quark-redis:
+    image: redis:7-alpine
+    container_name: quark-redis
+    restart: unless-stopped
+    command: redis-server --requirepass-file /run/secrets/redis_password --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+      - ./secrets/redis_password:/run/secrets/redis_password:ro
+    networks:
+      - quark-internal
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "$$(cat /run/secrets/redis_password)", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quark-mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: quark-mosquitto
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+      - ./secrets/mosquitto_password:/mosquitto/config/password_file:ro
+    networks:
+      - quark-internal
+    expose:
+      - "1883"
+    ports:
+      - "9001:9001"
+
+  quark-discord-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quark-discord-bot
+    restart: unless-stopped
+    command: python -m app.services.discord_bot
+    env_file: .env
+    environment:
+      - POSTGRES_HOST=quark-postgres
+      - REDIS_HOST=quark-redis
+      - MQTT_HOST=quark-mosquitto
+    volumes:
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      - quark-api
+    networks:
+      - quark-internal
+
+  quark-nginx:
+    image: nginx:alpine
+    container_name: quark-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+    depends_on:
+      - quark-api
+      - quark-frontend
+    networks:
+      - quark-internal
+      - quark-external
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: quark-uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime_kuma_data:/app/data
+    networks:
+      - quark-internal
+    expose:
+      - "3001"
+
+volumes:
+  postgres_data:
+  redis_data:
+  uptime_kuma_data:
+
+networks:
+  quark-internal:
+    driver: bridge
+  quark-external:
+    driver: bridge

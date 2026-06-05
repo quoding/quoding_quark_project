@@ -1,0 +1,44 @@
+services:
+  quark-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./backend:/app
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  quark-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_MQTT_URL=ws://localhost:9001
+
+  quark-postgres:
+    ports:
+      - "5432:5432"
+
+  quark-redis:
+    ports:
+      - "6379:6379"
+
+  quark-mosquitto:
+    ports:
+      - "1883:1883"
+
+  uptime-kuma:
+    ports:
+      - "3001:3001"

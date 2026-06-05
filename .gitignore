@@ -1,0 +1,59 @@
+# Environment & Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.eggs/
+
+# Alembic versions (keep empty dir)
+backend/alembic/versions/*.py
+!backend/alembic/versions/.gitkeep
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.next/
+*.tsbuildinfo
+
+# Docker local overrides
+docker-compose.override.yml
+
+# MQTT runtime
+mosquitto/data/
+mosquitto/log/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml

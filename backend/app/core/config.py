@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _read_secret(name: str) -> str:
+    """Read a Docker secret from /run/secrets/<name>."""
+    path = Path(f"/run/secrets/{name}")
+    if path.exists():
+        return path.read_text().strip()
+    return ""
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # App
+    environment: str = "development"
+    log_level: str = "info"
+    secret_key: str = "dev-secret-change-me"
+
+    # OpenAI
+    openai_model_default: str = "gpt-5.4-nano"
+    openai_model_complex: str = "gpt-5.4-mini"
+
+    # Postgres
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "quark"
+
+    # Redis
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_ttl_seconds: int = 86400
+
+    # MQTT
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+    mqtt_client_id: str = "quark-api"
+
+    # Discord
+    discord_channel_id: str = ""
+
+    # ── Secrets (Docker Secrets or env fallback) ────────────────────────────
+    @computed_field  # type: ignore[misc]
+    @property
+    def openai_api_key(self) -> str:
+        return _read_secret("openai_api_key") or ""
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def postgres_user(self) -> str:
+        return _read_secret("postgres_user") or "quark"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def postgres_password(self) -> str:
+        return _read_secret("postgres_password") or "quark"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def redis_password(self) -> str:
+        return _read_secret("redis_password") or ""
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def mqtt_user(self) -> str:
+        return _read_secret("mqtt_user") or "quark"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def mqtt_password(self) -> str:
+        return _read_secret("mosquitto_password") or ""
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def discord_token(self) -> str:
+        return _read_secret("discord_token") or ""
+
+    # ── Derived DSNs ────────────────────────────────────────────────────────
+    @computed_field  # type: ignore[misc]
+    @property
+    def database_url(self) -> str:
+        u = self.postgres_user
+        p = self.postgres_password
+        h = self.postgres_host
+        port = self.postgres_port
+        db = self.postgres_db
+        return f"postgresql+asyncpg://{u}:{p}@{h}:{port}/{db}"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def redis_url(self) -> str:
+        pw = f":{self.redis_password}@" if self.redis_password else ""
+        return f"redis://{pw}{self.redis_host}:{self.redis_port}/0"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
