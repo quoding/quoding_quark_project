@@ -69,7 +69,7 @@ services:
     image: redis:7-alpine
     container_name: quark-redis
     restart: unless-stopped
-    command: redis-server --requirepass-file /run/secrets/redis_password --save 60 1 --loglevel warning
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$(cat /run/secrets/redis_password)\" --save 60 1 --loglevel warning"]
     volumes:
       - redis_data:/data
       - ./secrets/redis_password:/run/secrets/redis_password:ro
@@ -78,7 +78,7 @@ services:
     expose:
       - "6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "$$(cat /run/secrets/redis_password)", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$(cat /run/secrets/redis_password)\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,11 +87,19 @@ services:
     image: eclipse-mosquitto:2
     container_name: quark-mosquitto
     restart: unless-stopped
+    # Generate the hashed password file at startup from the plaintext secret
+    # (as root), so it is owned/readable by the broker — avoids host file-perm
+    # issues with bind-mounted secrets.
+    user: root
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'rm -f /tmp/pwfile && mosquitto_passwd -b -c /tmp/pwfile quark "$$(cat /run/secrets/mosquitto_password)" && chown mosquitto /tmp/pwfile && exec mosquitto -c /mosquitto/config/mosquitto.conf'
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
-      - ./secrets/mosquitto_passwd_file:/mosquitto/config/password_file:ro
+      - ./secrets/mosquitto_password:/run/secrets/mosquitto_password:ro
     networks:
       - quark-internal
     expose:

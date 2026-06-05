@@ -21,6 +21,7 @@ redis[hiredis]==5.2.0
 
 # MQTT
 asyncio-mqtt==0.16.2
+paho-mqtt<2.0  # asyncio-mqtt 0.16.x uses paho APIs removed in paho 2.0
 
 # Scheduler
 apscheduler==3.10.4
