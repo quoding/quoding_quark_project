@@ -1,0 +1,41 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [".venv", "alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic env.py runs config setup before importing app modules (standard pattern).
+"alembic/env.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+exclude = ['^alembic/']
+
+[[tool.mypy.overrides]]
+module = [
+    "asyncio_mqtt.*",
+    "apscheduler.*",
+    "pgvector.*",
+    "fakeredis.*",
+]
+ignore_missing_imports = true
+
+# app/services/memory.py carries unrelated uncommitted WIP that is out of scope
+# for this goal (see GOAL_quark_backend.md §13) — do not modify or type-gate it.
+[[tool.mypy.overrides]]
+module = "app.services.memory"
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
