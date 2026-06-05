@@ -1,0 +1,248 @@
+/* QUARK — 모니터링 & 시스템 화면 (서버 게이지·서비스·GitHub·Docker·API 비용) */
+import { useEffect, useMemo, useState } from 'react';
+import { CardHead, Gauge } from '@/components/common';
+import { QDATA, fmt } from '@/data/quarkData';
+import type { ServiceStatus } from '@/types/quark';
+
+function ServerCard() {
+  const s = QDATA.server;
+  const [v, setV] = useState({ cpu: s.cpu, ram: s.ram, temp: s.temp, disk: s.disk });
+  useEffect(() => {
+    const id = setInterval(
+      () =>
+        setV((p) => ({
+          cpu: Math.max(8, Math.min(92, p.cpu + (Math.random() * 14 - 7))) | 0,
+          ram: Math.max(30, Math.min(88, p.ram + (Math.random() * 6 - 3))) | 0,
+          temp: Math.max(38, Math.min(72, p.temp + (Math.random() * 4 - 2))) | 0,
+          disk: s.disk,
+        })),
+      1800,
+    );
+    return () => clearInterval(id);
+  }, [s.disk]);
+  return (
+    <div className="card s6">
+      <CardHead icon="cpu" title="미니PC 서버" meta={'UP ' + s.uptimeDays + 'd'} metaAcc />
+      <div className="srv-grid">
+        <Gauge value={v.cpu} label="CPU" unit="%" />
+        <Gauge value={v.ram} label="RAM" unit="%" />
+        <Gauge value={v.temp} label="온도" unit="°" kind={v.temp > 65 ? 'bad' : v.temp > 55 ? 'warn' : 'ok'} />
+        <Gauge value={v.disk} label="디스크" unit="%" />
+      </div>
+    </div>
+  );
+}
+
+function ServicesCard() {
+  const LBL: Record<ServiceStatus, string> = { up: '정상', warn: '지연', down: '다운' };
+  return (
+    <div className="card s6">
+      <CardHead
+        icon="zap"
+        title="서비스 상태"
+        meta={QDATA.services.filter((s) => s.status === 'up').length + '/' + QDATA.services.length + ' UP'}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {QDATA.services.map((s, i) => (
+          <div key={i} className="svc-row">
+            <span className={'sdot ' + (s.status === 'up' ? 'ok' : s.status === 'warn' ? 'warn' : 'bad')} />
+            <span
+              style={{
+                fontSize: 13,
+                color: s.status === 'down' ? 'var(--tx-mid)' : 'var(--tx-hi)',
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {s.name}
+            </span>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--tx-mid)', flex: 'none' }}>
+              {s.latency ? s.latency + 'ms' : '—'}
+            </span>
+            <span className={'svc-tag ' + s.status}>{LBL[s.status]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GithubCard() {
+  const g = QDATA.github;
+  const weeks = 18;
+  const grid = useMemo(() => {
+    const out: number[][] = [];
+    for (let w = 0; w < weeks; w++) {
+      const col: number[] = [];
+      for (let d = 0; d < 7; d++) {
+        const r = Math.random();
+        let lvl = r > 0.82 ? 4 : r > 0.62 ? 3 : r > 0.42 ? 2 : r > 0.22 ? 1 : 0;
+        if (w > weeks - 4 && Math.random() > 0.4) lvl = Math.max(lvl, 2);
+        col.push(lvl);
+      }
+      out.push(col);
+    }
+    return out;
+  }, []);
+  const COLORS = [
+    'rgba(255,255,255,0.06)',
+    'var(--acc-dim)',
+    'color-mix(in srgb, var(--acc) 70%, transparent)',
+    'var(--acc)',
+    'var(--acc-bright)',
+  ];
+  return (
+    <div className="card s8">
+      <CardHead icon="github" title="GitHub 활동" meta={'마지막 커밋 ' + g.lastCommit} />
+      <div className="row" style={{ gap: 22, marginBottom: 16 }}>
+        <div>
+          <div className="big-num" style={{ fontSize: 24 }}>
+            {g.streak}
+            <span style={{ fontSize: 12, color: 'var(--tx-mid)', marginLeft: 3 }}>일</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>연속 커밋 🔥</div>
+        </div>
+        <div>
+          <div className="big-num" style={{ fontSize: 24, color: 'var(--acc-bright)' }}>
+            {g.today}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>오늘 커밋</div>
+        </div>
+        <div>
+          <div className="big-num" style={{ fontSize: 24 }}>
+            {g.week}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>이번 주</div>
+        </div>
+      </div>
+      <div className="gh-grid">
+        {grid.map((col, w) => (
+          <div key={w} className="gh-col">
+            {col.map((lvl, d) => (
+              <i key={d} title={lvl + ' commits'} style={{ background: COLORS[lvl] }} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 6, marginTop: 12, justifyContent: 'flex-end', fontSize: 10, color: 'var(--tx-mid)' }}>
+        적음{' '}
+        {COLORS.map((c, i) => (
+          <span key={i} className="gh-leg" style={{ background: c }} />
+        ))}{' '}
+        많음
+      </div>
+    </div>
+  );
+}
+
+function DockerCard() {
+  return (
+    <div className="card s4">
+      <CardHead icon="automation" title="Docker" meta={QDATA.docker.filter((d) => d.status === 'running').length + ' running'} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {QDATA.docker.map((d, i) => (
+          <div key={i} className="dk-row">
+            <span
+              className={'sdot ' + (d.status === 'running' ? 'ok' : 'bad')}
+              style={d.status === 'running' ? { animation: 'breathe 2.4s infinite' } : {}}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: d.status === 'running' ? 'var(--tx-hi)' : 'var(--tx-mid)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {d.name}
+              </div>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--tx-low)' }}>
+                {d.img}
+              </div>
+            </div>
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--tx-mid)', textAlign: 'right', flex: 'none' }}>
+              {d.status === 'running' ? (
+                <>
+                  {d.cpu}% · {d.mem}MB
+                </>
+              ) : (
+                'stopped'
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ApiCard() {
+  const a = QDATA.api;
+  const pct = Math.round((a.monthCost / a.budget) * 100);
+  return (
+    <div className="card s12">
+      <CardHead
+        icon="coin"
+        title="API 비용 · 토큰 사용량"
+        meta={'이번 달 ₩' + fmt(a.monthCost) + ' / ₩' + fmt(a.budget)}
+        metaAcc={pct < 80}
+      />
+      <div className="between" style={{ marginBottom: 6 }}>
+        <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>예산 사용률</span>
+        <span className="mono" style={{ fontSize: 13, color: pct > 80 ? 'var(--warn)' : 'var(--acc-bright)', fontWeight: 600 }}>
+          {pct}%
+        </span>
+      </div>
+      <div className={'bar ' + (pct > 80 ? 'warn' : '')} style={{ marginBottom: 18 }}>
+        <i style={{ width: pct + '%' }} />
+      </div>
+      <div className="api-grid">
+        {a.items.map((it, i) => (
+          <div key={i} className="api-item">
+            <div className="between" style={{ marginBottom: 7 }}>
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--tx-hi)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {it.name}
+              </span>
+            </div>
+            <div className="big-num" style={{ fontSize: 18 }}>
+              ₩{fmt(it.cost)}
+            </div>
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--tx-mid)', margin: '3px 0 8px' }}>
+              {it.tokens !== '—' ? it.tokens + ' tokens' : '사용량 기준'}
+            </div>
+            <div className="bar" style={{ height: 4 }}>
+              <i style={{ width: it.pct + '%' }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function MonitorScreen() {
+  return (
+    <div className="canvas scroll">
+      <div className="grid">
+        <ServerCard />
+        <ServicesCard />
+        <GithubCard />
+        <DockerCard />
+        <ApiCard />
+      </div>
+    </div>
+  );
+}
