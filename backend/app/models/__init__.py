@@ -1,0 +1,12 @@
+"""SQLAlchemy ORM models.
+
+Importing this package registers every model on ``Base.metadata`` so that
+``create_all`` and Alembic autogenerate see the full schema.
+"""
+from __future__ import annotations
+
+from app.models.automation import Automation
+from app.models.device import Device
+from app.models.memory import AgentMemory, DailyEpisode
+
+__all__ = ["AgentMemory", "Automation", "DailyEpisode", "Device"]
