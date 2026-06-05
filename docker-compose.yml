@@ -91,7 +91,7 @@ services:
       - ./mosquitto/config:/mosquitto/config:ro
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
-      - ./secrets/mosquitto_password:/mosquitto/config/password_file:ro
+      - ./secrets/mosquitto_passwd_file:/mosquitto/config/password_file:ro
     networks:
       - quark-internal
     expose:
