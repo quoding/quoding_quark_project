@@ -10,13 +10,14 @@ export const WIDGET_META: WidgetMeta[] = [
   { id: 'climate', title: '냉방·식물', ico: 'snow', cat: '집 제어', sizes: [4, 3], def: true },
   // 일정 & 비서
   { id: 'schedule', title: '오늘 일정', ico: 'calendar', cat: '일정·비서', sizes: [5, 4], def: true },
-  { id: 'actions', title: '오늘의 액션', ico: 'zap', cat: '일정·비서', sizes: [3, 4], def: true },
+  { id: 'today', title: '오늘 할일', ico: 'check', cat: '일정·비서', sizes: [4, 3], def: true },
+  { id: 'actions', title: '오늘 할일 (구)', ico: 'zap', cat: '일정·비서', sizes: [3, 4], def: false },
   { id: 'console', title: '쿼크 비서', ico: 'mic', cat: '일정·비서', sizes: [8, 6, 12], def: true },
   { id: 'memo', title: '빠른 메모', ico: 'memo', cat: '일정·비서', sizes: [4, 3], def: true },
   { id: 'news', title: '뉴스 피드', ico: 'news', cat: '일정·비서', sizes: [4, 6], def: false },
   { id: 'transit', title: '대중교통', ico: 'bus', cat: '일정·비서', sizes: [4, 3], def: false },
   // 습관 & 건강
-  { id: 'habits', title: '오늘의 습관', ico: 'check', cat: '습관·건강', sizes: [4, 3], def: true },
+  { id: 'habits', title: '오늘의 습관 (구)', ico: 'check', cat: '습관·건강', sizes: [4, 3], def: false },
   { id: 'water', title: '수분 섭취', ico: 'droplet', cat: '습관·건강', sizes: [3, 4], def: true },
   { id: 'mood', title: '기분 로그', ico: 'smile', cat: '습관·건강', sizes: [3, 4], def: false },
   { id: 'sleep', title: '수면 기록', ico: 'bed', cat: '습관·건강', sizes: [3, 4], def: false },

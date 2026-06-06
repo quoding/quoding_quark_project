@@ -24,6 +24,7 @@ services:
     ports:
       - "5173:5173"
     environment:
+      - BACKEND_URL=http://quark-api:8000
       - VITE_API_URL=http://localhost:8000/api
       - VITE_MQTT_URL=ws://localhost:9001
       - VITE_MQTT_USER=${MQTT_PLAINTEXT_USER}
@@ -40,6 +41,23 @@ services:
   quark-mosquitto:
     ports:
       - "1883:1883"
+
+  quark-device-sim:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./backend:/app
+    environment:
+      - MQTT_HOST=quark-mosquitto
+      - MQTT_PORT=1883
+      - MQTT_USER=${MQTT_PLAINTEXT_USER}
+      - MQTT_PASS=${MQTT_PLAINTEXT_PASS}
+    command: python tools/device_sim.py
+    depends_on:
+      - quark-mosquitto
+    restart: unless-stopped
 
   uptime-kuma:
     ports:

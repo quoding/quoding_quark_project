@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     # Discord
     discord_channel_id: str = ""
 
+    # GitHub
+    github_username: str = ""
+
+    # Weather (Open-Meteo, Seoul default)
+    weather_lat: float = 37.5665
+    weather_lon: float = 126.9780
+
     # ── Secrets (Docker Secrets or env fallback) ────────────────────────────
     @computed_field  # type: ignore[prop-decorator]
     @property

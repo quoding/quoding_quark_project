@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.core.redis import close_pool
-from app.routers import chat, devices, health
+from app.routers import agenda, automations, chat, devices, habits, health, ideas, memo, system, todos, water
 from app.services.mqtt_bridge import mqtt_bridge
 from app.services.rule_router import rule_router
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -56,3 +56,11 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router, prefix="/api")
 app.include_router(devices.router, prefix="/api")
+app.include_router(agenda.router, prefix="/api")
+app.include_router(todos.router, prefix="/api")
+app.include_router(habits.router, prefix="/api")
+app.include_router(ideas.router, prefix="/api")
+app.include_router(memo.router, prefix="/api")
+app.include_router(automations.router, prefix="/api")
+app.include_router(water.router, prefix="/api")
+app.include_router(system.router, prefix="/api")

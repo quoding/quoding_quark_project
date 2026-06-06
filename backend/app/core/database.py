@@ -40,6 +40,23 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+async def get_db_optional() -> AsyncGenerator[AsyncSession | None, None]:
+    """Like ``get_db`` but yields ``None`` instead of raising when DB is unreachable.
+
+    Used by endpoints that degrade gracefully (e.g. RAG context injection).
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    except Exception:
+        yield None
+
+
 async def init_db() -> None:
     """Create tables and enable pgvector extension."""
     import app.models  # noqa: F401  — register models on Base.metadata

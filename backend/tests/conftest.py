@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+import redis.asyncio  # noqa: F401  — makes redis.asyncio available as attribute for fakeredis
 from fakeredis import aioredis as fake_aioredis
 
 from app.agents.deps import QuarkDeps

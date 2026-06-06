@@ -1,10 +1,33 @@
 /* QUARK — 생산성/정보 위젯: 일정·액션·습관·포모도로·D-Day·수분·시세 */
 import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { useHomeStore } from '@/stores/homeStore';
 import { QDATA, fmtMan } from '@/data/quarkData';
 import type { MarketRow, ScheduleTag } from '@/types/quark';
+
+interface ApiEvent {
+  id: number;
+  title: string;
+  scheduled_at: string;
+  tag: string;
+  done: boolean;
+}
+
+interface ApiTodo {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
+interface ApiHabit {
+  id: number;
+  name: string;
+  streak: number;
+  done_today: boolean;
+}
 
 const TAG_COLOR: Record<ScheduleTag, string> = {
   회의: 'var(--acc-bright)',
@@ -15,110 +38,166 @@ const TAG_COLOR: Record<ScheduleTag, string> = {
 
 /* ============ 오늘 일정 ============ */
 export function ScheduleCard() {
-  const items = QDATA.schedule;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const { data: events = [] } = useQuery<ApiEvent[]>({
+    queryKey: ['events', todayStr],
+    queryFn: () =>
+      axios.get<ApiEvent[]>(`/api/agenda/events?date_filter=${todayStr}`).then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+
+  const now = new Date();
   return (
     <div className="card hov s5">
-      <CardHead icon="calendar" title="오늘 일정" meta={items.length + '건'} />
+      <CardHead icon="calendar" title="오늘 일정" meta={events.length + '건'} />
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {items.map((it, i) => (
-          <div key={i} className="sched-row">
-            <span
-              className="mono"
-              style={{
-                fontSize: 12.5,
-                color: it.soon ? 'var(--acc-bright)' : 'var(--tx-mid)',
-                width: 46,
-                flex: 'none',
-                fontWeight: 600,
-              }}
-            >
-              {it.t}
-            </span>
-            <span className="sched-line" style={{ background: TAG_COLOR[it.tag] || 'var(--tx-faint)' }} />
-            <span
-              style={{
-                fontSize: 13,
-                color: 'var(--tx-hi)',
-                flex: 1,
-                minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {it.title}
-            </span>
-            {it.soon && <span className="soon-tag">곧</span>}
-            <span style={{ fontSize: 10.5, color: 'var(--tx-low)', flex: 'none' }}>{it.tag}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ============ 습관 + 스트릭 ============ */
-export function HabitsCard() {
-  const habits = useHomeStore((s) => s.habits);
-  const onToggle = useHomeStore((s) => s.toggleHabit);
-  const doneCt = habits.filter((h) => h.done).length;
-  return (
-    <div className="card hov s4">
-      <CardHead icon="check" title="오늘의 습관" meta={doneCt + '/' + habits.length} metaAcc={doneCt === habits.length} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {habits.map((h, i) => (
-          <div key={i} className="between habit-row" onClick={() => onToggle(i)}>
-            <div className="row" style={{ gap: 10, minWidth: 0 }}>
-              <span className={'cbox' + (h.done ? ' on' : '')}>{h.done && <Icon name="check" />}</span>
+        {events.length === 0 && (
+          <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>일정 없음</span>
+        )}
+        {events.map((ev) => {
+          const d = new Date(ev.scheduled_at);
+          const t = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+          const tag = ev.tag as ScheduleTag;
+          const color = TAG_COLOR[tag] ?? 'var(--tx-faint)';
+          const soon = d.getTime() - now.getTime() < 30 * 60 * 1000 && d.getTime() > now.getTime();
+          return (
+            <div key={ev.id} className="sched-row">
+              <span
+                className="mono"
+                style={{
+                  fontSize: 12.5,
+                  color: soon ? 'var(--acc-bright)' : 'var(--tx-mid)',
+                  width: 46,
+                  flex: 'none',
+                  fontWeight: 600,
+                }}
+              >
+                {t}
+              </span>
+              <span className="sched-line" style={{ background: color }} />
               <span
                 style={{
                   fontSize: 13,
-                  color: h.done ? 'var(--tx-hi)' : 'var(--tx-mid)',
+                  color: 'var(--tx-hi)',
+                  flex: 1,
+                  minWidth: 0,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
               >
-                {h.name}
+                {ev.title}
               </span>
+              {soon && <span className="soon-tag">곧</span>}
+              <span style={{ fontSize: 10.5, color: 'var(--tx-low)', flex: 'none' }}>{ev.tag}</span>
             </div>
-            <span className="streak">
-              <Icon name="flame" fill /> {h.streak}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ============ 액션 리스트 ============ */
-export function ActionsCard() {
-  const actions = useHomeStore((s) => s.actions);
-  const onToggle = useHomeStore((s) => s.toggleAction);
+/* ============ 오늘 할일 — 습관 + 할일 통합 ============ */
+export function TodayCard() {
+  const qc = useQueryClient();
+
+  const { data: habits = [] } = useQuery<ApiHabit[]>({
+    queryKey: ['habits'],
+    queryFn: () => axios.get<ApiHabit[]>('/api/habits').then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+  const { data: todos = [] } = useQuery<ApiTodo[]>({
+    queryKey: ['todos'],
+    queryFn: () => axios.get<ApiTodo[]>('/api/todos').then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+
+  const toggleHabit = useMutation({
+    mutationFn: (id: number) =>
+      axios.patch<ApiHabit>(`/api/habits/${id}/check`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['habits'] }),
+  });
+  const toggleTodo = useMutation({
+    mutationFn: (id: number) => axios.patch<ApiTodo>(`/api/todos/${id}`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['todos'] }),
+  });
+
+  const totalDone = habits.filter((h) => h.done_today).length + todos.filter((t) => t.done).length;
+  const total = habits.length + todos.length;
+  const remaining = total - totalDone;
+
   return (
-    <div className="card hov s3">
-      <CardHead icon="zap" title="오늘의 액션" meta={actions.filter((a) => !a.done).length + ' 남음'} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {actions.map((a, i) => (
-          <div key={i} className="row habit-row" style={{ gap: 10 }} onClick={() => onToggle(i)}>
-            <span className={'cbox' + (a.done ? ' on' : '')}>{a.done && <Icon name="check" />}</span>
-            <span
-              style={{
-                fontSize: 12.5,
-                color: a.done ? 'var(--tx-low)' : 'var(--tx)',
-                textDecoration: a.done ? 'line-through' : 'none',
-                lineHeight: 1.35,
-              }}
-            >
-              {a.t}
+    <div className="card hov s4">
+      <CardHead
+        icon="zap"
+        title="오늘 할일"
+        meta={remaining > 0 ? `${remaining} 남음` : total > 0 ? '완료 ✓' : '없음'}
+        metaAcc={total > 0 && remaining === 0}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {total === 0 && (
+          <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>할 일 없음</span>
+        )}
+
+        {/* 습관 섹션 */}
+        {habits.length > 0 && (
+          <>
+            <span style={{ fontSize: 10, color: 'var(--tx-faint)', letterSpacing: 1, textTransform: 'uppercase' as const, marginBottom: 2 }}>
+              습관
             </span>
-          </div>
-        ))}
+            {habits.map((h) => (
+              <div key={`h-${h.id}`} className="between habit-row" onClick={() => toggleHabit.mutate(h.id)}>
+                <div className="row" style={{ gap: 10, minWidth: 0 }}>
+                  <span className={'cbox' + (h.done_today ? ' on' : '')}>{h.done_today && <Icon name="check" />}</span>
+                  <span style={{
+                    fontSize: 12.5,
+                    color: h.done_today ? 'var(--tx-low)' : 'var(--tx)',
+                    textDecoration: h.done_today ? 'line-through' : 'none',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {h.name}
+                  </span>
+                </div>
+                {h.streak > 0 && (
+                  <span className="streak" style={{ fontSize: 11 }}>
+                    <Icon name="flame" fill /> {h.streak}
+                  </span>
+                )}
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* 할일 섹션 */}
+        {todos.length > 0 && (
+          <>
+            <span style={{ fontSize: 10, color: 'var(--tx-faint)', letterSpacing: 1, textTransform: 'uppercase' as const, marginTop: habits.length > 0 ? 4 : 0, marginBottom: 2 }}>
+              할일
+            </span>
+            {todos.map((todo) => (
+              <div key={`t-${todo.id}`} className="row habit-row" style={{ gap: 10 }} onClick={() => toggleTodo.mutate(todo.id)}>
+                <span className={'cbox' + (todo.done ? ' on' : '')}>{todo.done && <Icon name="check" />}</span>
+                <span style={{
+                  fontSize: 12.5,
+                  color: todo.done ? 'var(--tx-low)' : 'var(--tx)',
+                  textDecoration: todo.done ? 'line-through' : 'none',
+                  lineHeight: 1.35,
+                }}>
+                  {todo.text}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+/** @deprecated HabitsCard와 TodosCard는 TodayCard로 통합됨 */
+export function HabitsCard() { return <TodayCard />; }
+export function TodosCard() { return <TodayCard />; }
 
 /* ============ 포모도로 ============ */
 export function PomodoroCard() {
@@ -225,11 +304,24 @@ export function DdayCard() {
 }
 
 /* ============ 물 마시기 ============ */
+interface WaterData { total_ml: number; goal_ml: number; pct: number; }
+
 export function WaterCard() {
-  const ml = useHomeStore((s) => s.water);
-  const onAdd = useHomeStore((s) => s.addWater);
-  const goal = 2000;
-  const pct = Math.min(100, Math.round((ml / goal) * 100));
+  const qc = useQueryClient();
+  const { data } = useQuery<WaterData>({
+    queryKey: ['water-today'],
+    queryFn: () => axios.get<WaterData>('/api/water/today').then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+  const add = useMutation({
+    mutationFn: () => axios.post<WaterData>('/api/water/today').then((r) => r.data),
+    onSuccess: (updated) => qc.setQueryData(['water-today'], updated),
+  });
+
+  const ml = data?.total_ml ?? 0;
+  const goal = data?.goal_ml ?? 2000;
+  const pct = data?.pct ?? 0;
+
   return (
     <div className="card hov s3">
       <CardHead icon="droplet" title="수분 섭취" meta={pct + '%'} metaAcc={pct >= 100} />
@@ -247,7 +339,7 @@ export function WaterCard() {
           </div>
         </div>
       </div>
-      <button className="pill acc" style={{ width: '100%', justifyContent: 'center' }} onClick={onAdd}>
+      <button className="pill acc" style={{ width: '100%', justifyContent: 'center' }} onClick={() => add.mutate()}>
         <Icon name="plus" /> 250ml 기록
       </button>
     </div>

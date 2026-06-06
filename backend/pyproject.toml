@@ -22,6 +22,8 @@ module = [
     "apscheduler.*",
     "pgvector.*",
     "fakeredis.*",
+    "psutil.*",
+    "duckduckgo_search.*",
 ]
 ignore_missing_imports = true
 

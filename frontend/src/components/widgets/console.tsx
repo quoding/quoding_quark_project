@@ -1,7 +1,9 @@
 /* QUARK — 비서 콘솔 + 빠른 메모.
  * 응답은 hooks/useQuarkChat.ts(백엔드 SSE)로 실시간 스트리밍한다.
  * onCommand(homeStore)는 IoT 화면의 낙관적 UI 동기화를 위해 유지. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { useHomeStore } from '@/stores/homeStore';
@@ -119,10 +121,24 @@ export function QuarkConsole() {
 }
 
 export function QuickMemo() {
-  const [val, setVal] = useState<string>(() => localStorage.getItem('quark-memo') || '');
+  const qc = useQueryClient();
+  const { data } = useQuery<{ id: number; content: string }>({
+    queryKey: ['memo'],
+    queryFn: () => axios.get('/api/memo').then((r) => r.data),
+  });
+
+  const [val, setVal] = useState('');
   useEffect(() => {
-    localStorage.setItem('quark-memo', val);
-  }, [val]);
+    if (data !== undefined) setVal(data.content);
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: (content: string) => axios.put('/api/memo', { content }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['memo'] }),
+  });
+
+  const onSave = useCallback(() => save.mutate(val), [val, save]);
+
   return (
     <div className="card s4">
       <CardHead icon="memo" title="빠른 메모" meta={val.length ? val.length + '자' : '비어있음'} />
@@ -131,6 +147,7 @@ export function QuickMemo() {
         placeholder={'생각나는 거 아무거나 적어둬.\n쿼크가 나중에 정리해줄게 ✍️'}
         value={val}
         onChange={(e) => setVal(e.target.value)}
+        onBlur={onSave}
       />
     </div>
   );

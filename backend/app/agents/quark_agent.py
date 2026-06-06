@@ -7,12 +7,13 @@ The real key is only ever read from ``settings.openai_api_key`` (Docker secret).
 """
 from __future__ import annotations
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.agents.deps import QuarkDeps
 from app.core.config import get_settings
+from app.tools.assistant import register_assistant_tools
 from app.tools.home import register_home_tools
 
 settings = get_settings()
@@ -57,3 +58,19 @@ quark_agent: Agent[QuarkDeps, str] = Agent(
 )
 
 register_home_tools(quark_agent)
+register_assistant_tools(quark_agent)
+
+
+@quark_agent.tool
+async def remember_fact(ctx: RunContext[QuarkDeps], fact: str) -> str:
+    """중요한 사실을 장기 기억(pgvector)에 저장한다.
+
+    Args:
+        fact: 기억할 사실 — 한 문장으로 작성.
+    """
+    if ctx.deps.db is None:
+        return "장기 기억 저장 불가 (DB 연결 없음)"
+    from app.services.rag import save_memory
+
+    await save_memory(fact, {"source": "agent"}, ctx.deps.db)
+    return f"기억했어: {fact}"

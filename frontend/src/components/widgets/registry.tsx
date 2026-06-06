@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { ScenesBar, LightsCard, LedCard, ClimatePlantCard } from '@/components/widgets/home';
 import {
   ScheduleCard,
-  ActionsCard,
+  TodayCard,
+  TodosCard,
   HabitsCard,
   PomodoroCard,
   DdayCard,
@@ -29,8 +30,9 @@ export const DASH_WIDGETS: Record<string, ReactNode> = {
   led: <LedCard />,
   climate: <ClimatePlantCard />,
   schedule: <ScheduleCard />,
+  today: <TodayCard />,
   habits: <HabitsCard />,
-  actions: <ActionsCard />,
+  actions: <TodosCard />,
   pomodoro: <PomodoroCard />,
   dday: <DdayCard />,
   water: <WaterCard />,

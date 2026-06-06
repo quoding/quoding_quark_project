@@ -1,33 +1,43 @@
 /* QUARK — 모니터링 & 시스템 화면 (서버 게이지·서비스·GitHub·Docker·API 비용) */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { CardHead, Gauge } from '@/components/common';
 import { QDATA, fmt } from '@/data/quarkData';
 import type { ServiceStatus } from '@/types/quark';
 
+interface SystemStats {
+  cpu: number;
+  ram: number;
+  disk: number;
+  temp: number | null;
+  uptime_days: number;
+}
+
 function ServerCard() {
   const s = QDATA.server;
-  const [v, setV] = useState({ cpu: s.cpu, ram: s.ram, temp: s.temp, disk: s.disk });
-  useEffect(() => {
-    const id = setInterval(
-      () =>
-        setV((p) => ({
-          cpu: Math.max(8, Math.min(92, p.cpu + (Math.random() * 14 - 7))) | 0,
-          ram: Math.max(30, Math.min(88, p.ram + (Math.random() * 6 - 3))) | 0,
-          temp: Math.max(38, Math.min(72, p.temp + (Math.random() * 4 - 2))) | 0,
-          disk: s.disk,
-        })),
-      1800,
-    );
-    return () => clearInterval(id);
-  }, [s.disk]);
+
+  const { data: stats } = useQuery<SystemStats>({
+    queryKey: ['system'],
+    queryFn: () => axios.get<SystemStats>('/api/system/stats').then((r) => r.data),
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const cpu = stats?.cpu ?? s.cpu;
+  const ram = stats?.ram ?? s.ram;
+  const disk = stats?.disk ?? s.disk;
+  const temp = stats?.temp ?? s.temp;
+  const uptimeDays = stats?.uptime_days ?? s.uptimeDays;
+
   return (
     <div className="card s6">
-      <CardHead icon="cpu" title="미니PC 서버" meta={'UP ' + s.uptimeDays + 'd'} metaAcc />
+      <CardHead icon="cpu" title="미니PC 서버" meta={'UP ' + uptimeDays + 'd'} metaAcc />
       <div className="srv-grid">
-        <Gauge value={v.cpu} label="CPU" unit="%" />
-        <Gauge value={v.ram} label="RAM" unit="%" />
-        <Gauge value={v.temp} label="온도" unit="°" kind={v.temp > 65 ? 'bad' : v.temp > 55 ? 'warn' : 'ok'} />
-        <Gauge value={v.disk} label="디스크" unit="%" />
+        <Gauge value={cpu} label="CPU" unit="%" />
+        <Gauge value={ram} label="RAM" unit="%" />
+        <Gauge value={temp ?? 0} label="온도" unit="°" kind={(temp ?? 0) > 65 ? 'bad' : (temp ?? 0) > 55 ? 'warn' : 'ok'} />
+        <Gauge value={disk} label="디스크" unit="%" />
       </div>
     </div>
   );

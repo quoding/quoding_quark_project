@@ -5,8 +5,19 @@ Importing this package registers every model on ``Base.metadata`` so that
 """
 from __future__ import annotations
 
-from app.models.automation import Automation
+from app.models.agenda import Automation, Habit, Idea, Memo, ScheduledEvent, Todo, WaterLog
 from app.models.device import Device
 from app.models.memory import AgentMemory, DailyEpisode
 
-__all__ = ["AgentMemory", "Automation", "DailyEpisode", "Device"]
+__all__ = [
+    "AgentMemory",
+    "Automation",
+    "DailyEpisode",
+    "Device",
+    "Habit",
+    "Idea",
+    "Memo",
+    "ScheduledEvent",
+    "Todo",
+    "WaterLog",
+]

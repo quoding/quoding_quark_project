@@ -8,9 +8,11 @@ import IotScreen from '@/pages/IotScreen';
 import AgendaScreen from '@/pages/AgendaScreen';
 import MonitorScreen from '@/pages/MonitorScreen';
 import AutomationScreen from '@/pages/AutomationScreen';
+import { useMqtt } from '@/hooks/useMqtt';
 
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
+  useMqtt();
   return (
     <div className={'app' + (collapsed ? ' collapsed' : '')}>
       <Sidebar onToggle={() => setCollapsed((c) => !c)} />
