@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # Discord
     discord_channel_id: str = ""
+    discord_reminder_channel_id: str = ""  # 알림 전용 채널 (미설정 시 DM으로 발송)
 
     # GitHub
     github_username: str = ""

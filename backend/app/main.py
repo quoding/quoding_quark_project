@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,10 +9,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import AsyncSessionLocal, init_db
 from app.core.redis import close_pool
 from app.routers import agenda, automations, chat, devices, habits, health, ideas, memo, system, todos, tracking, water
 from app.services.mqtt_bridge import mqtt_bridge
+from app.services.reminder_service import reminder_poll_loop
 from app.services.rule_router import rule_router
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -29,9 +31,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rule_router.load_defaults()
     start_scheduler()
 
+    poll_task = asyncio.create_task(reminder_poll_loop(AsyncSessionLocal))
+
     yield
 
     logger.info("QUARK API shutting down")
+    poll_task.cancel()
     stop_scheduler()
     await mqtt_bridge.stop()
     await close_pool()

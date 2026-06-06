@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fakeredis import aioredis as fake_aioredis
 from pydantic_ai.models.test import TestModel
 
 from app.agents.quark_agent import quark_agent
-from app.services.discord_bot import QuarkDiscordClient
+from app.services.discord_bot import QuarkBot
 
 
 class _Typing:
@@ -42,12 +42,15 @@ class _FakeMessage:
 
 
 async def test_on_message_replies_via_agent(fake_redis: fake_aioredis.FakeRedis) -> None:
-    client = QuarkDiscordClient()
-    client._redis = fake_redis  # skip setup_hook (no MQTT/real redis in test)
+    bot = QuarkBot()
+    bot._redis = fake_redis  # skip setup_hook (no MQTT/real redis in test)
 
     message = _FakeMessage("안녕 쿼크")
     with quark_agent.override(model=TestModel(call_tools=[])):
-        await client.on_message(message)  # type: ignore[arg-type]
+        with patch.object(bot, "process_commands", new_callable=AsyncMock):
+            # Bypass channel filter (env may have DISCORD_CHANNEL_ID set)
+            with patch.object(bot, "_should_handle", return_value=True):
+                await bot.on_message(message)  # type: ignore[arg-type]
 
     message.channel.send.assert_awaited_once()
     reply = message.channel.send.await_args.args[0]
@@ -62,12 +65,13 @@ async def test_on_message_replies_via_agent(fake_redis: fake_aioredis.FakeRedis)
 
 
 async def test_on_message_ignores_bots(fake_redis: fake_aioredis.FakeRedis) -> None:
-    client = QuarkDiscordClient()
-    client._redis = fake_redis
+    bot = QuarkBot()
+    bot._redis = fake_redis
 
     message = _FakeMessage("무시해줘")
     message.author.bot = True
-    await client.on_message(message)  # type: ignore[arg-type]
+    with patch.object(bot, "process_commands", new_callable=AsyncMock):
+        await bot.on_message(message)  # type: ignore[arg-type]
 
     cast_channel: Any = message.channel
     cast_channel.send.assert_not_awaited()

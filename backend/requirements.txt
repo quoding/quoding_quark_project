@@ -28,6 +28,8 @@ apscheduler==3.10.4
 
 # Discord bot
 discord.py==2.7.1
+dateparser==1.4.0
+croniter==3.0.3
 
 # HTTP client
 httpx==0.27.2
