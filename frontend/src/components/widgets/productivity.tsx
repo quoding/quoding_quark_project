@@ -5,8 +5,8 @@ import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { useHomeStore } from '@/stores/homeStore';
-import { QDATA, fmtMan } from '@/data/quarkData';
-import type { MarketRow, ScheduleTag } from '@/types/quark';
+import { QDATA } from '@/data/quarkData';
+import type { ScheduleTag } from '@/types/quark';
 
 interface ApiEvent {
   id: number;
@@ -261,47 +261,8 @@ export function PomodoroCard() {
   );
 }
 
-/* ============ D-Day ============ */
-export function DdayCard() {
-  const items = QDATA.dday;
-  return (
-    <div className="card hov s3">
-      <CardHead icon="target" title="D-Day" meta={items.length + '개'} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {items.map((d, i) => (
-          <div key={i} className="between" style={{ alignItems: 'flex-end' }}>
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 12.5,
-                  color: 'var(--tx-hi)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {d.label}
-              </div>
-              <div style={{ fontSize: 10.5, color: 'var(--tx-mid)' }}>{d.days <= 14 ? '곧 다가와' : '여유 있어'}</div>
-            </div>
-            <div
-              className="mono"
-              style={{
-                fontSize: 22,
-                fontWeight: 700,
-                color: d.days <= 14 ? 'var(--acc-bright)' : 'var(--tx)',
-                lineHeight: 1,
-                flex: 'none',
-              }}
-            >
-              D-{d.days}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+/* ============ D-Day — extra.tsx로 이동됨 ============ */
+export { DdayCard } from '@/components/widgets/extra';
 
 /* ============ 물 마시기 ============ */
 interface WaterData { total_ml: number; goal_ml: number; pct: number; }
@@ -346,62 +307,5 @@ export function WaterCard() {
   );
 }
 
-/* ============ 시세 ============ */
-function MarketRowView({ sym, name, price, chg }: MarketRow) {
-  return (
-    <div className="between" style={{ padding: '7px 0' }}>
-      <div className="row" style={{ gap: 9, minWidth: 0 }}>
-        <span className="mkt-sym">{sym}</span>
-        <span
-          style={{
-            fontSize: 11.5,
-            color: 'var(--tx-mid)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {name}
-        </span>
-      </div>
-      <div style={{ textAlign: 'right', flex: 'none' }}>
-        <div className="mono" style={{ fontSize: 12.5, color: 'var(--tx-hi)', fontWeight: 600 }}>
-          ₩{fmtMan(price)}
-        </div>
-        <div
-          className="mono"
-          style={{
-            fontSize: 10.5,
-            color: chg >= 0 ? 'var(--ok)' : 'var(--bad)',
-            display: 'flex',
-            gap: 2,
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-          }}
-        >
-          <span style={{ width: 10, height: 10 }}>
-            <Icon name={chg >= 0 ? 'arrowUp' : 'arrowDown'} />
-          </span>
-          {Math.abs(chg)}%
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function MarketCard() {
-  return (
-    <div className="card hov s3">
-      <CardHead icon="coin" title="시세" meta="실시간" />
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {QDATA.crypto.map((c) => (
-          <MarketRowView key={c.sym} {...c} />
-        ))}
-        <div style={{ height: 1, background: 'var(--inset-line)', margin: '4px 0' }} />
-        {QDATA.fx.map((c) => (
-          <MarketRowView key={c.sym} {...c} />
-        ))}
-      </div>
-    </div>
-  );
-}
+/* ============ 시세 — extra.tsx로 이동됨 ============ */
+export { MarketCard } from '@/components/widgets/extra';

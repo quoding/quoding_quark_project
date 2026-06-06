@@ -197,6 +197,75 @@ async def list_habits(ctx: RunContext[QuarkDeps]) -> str:
     return "습관 목록:\n" + "\n".join(lines)
 
 
+async def log_mood(
+    ctx: RunContext[QuarkDeps],
+    score: int,
+    note: str = "",
+) -> str:
+    """오늘 기분을 기록한다.
+
+    Args:
+        score: 기분 점수 1-5 (1=매우나쁨, 5=매우좋음).
+        note: 추가 메모 (선택).
+    """
+    if ctx.deps.db is None:
+        return "기분 저장 불가 (DB 연결 없음)"
+    if not 1 <= score <= 5:
+        return "score는 1-5 사이여야 해"
+    from app.models.agenda import MoodLog
+
+    entry = MoodLog(date=date.today(), score=score, note=note or None)
+    ctx.deps.db.add(entry)
+    await ctx.deps.db.flush()
+    await ctx.deps.db.commit()
+    return f"기분 기록했어: {score}점"
+
+
+async def log_sleep(
+    ctx: RunContext[QuarkDeps],
+    hours: float,
+    quality: int = 3,
+) -> str:
+    """어젯밤 수면을 기록한다.
+
+    Args:
+        hours: 수면 시간 (예: 7.5).
+        quality: 수면 질 1-5 (1=매우나쁨, 5=매우좋음).
+    """
+    if ctx.deps.db is None:
+        return "수면 저장 불가 (DB 연결 없음)"
+    if not 1 <= quality <= 5:
+        return "quality는 1-5 사이여야 해"
+    from app.models.agenda import SleepLog
+
+    entry = SleepLog(date=date.today(), hours=hours, quality=quality)
+    ctx.deps.db.add(entry)
+    await ctx.deps.db.flush()
+    await ctx.deps.db.commit()
+    return f"수면 기록했어: {hours}시간, 질 {quality}점"
+
+
+async def log_caffeine(
+    ctx: RunContext[QuarkDeps],
+    cups: int = 1,
+) -> str:
+    """오늘 마신 커피를 기록한다 (1잔 = 100mg).
+
+    Args:
+        cups: 커피 잔 수 (기본 1).
+    """
+    if ctx.deps.db is None:
+        return "카페인 저장 불가 (DB 연결 없음)"
+    from app.models.agenda import CaffeineLog
+
+    for _ in range(cups):
+        entry = CaffeineLog(date=date.today(), amount_mg=100)
+        ctx.deps.db.add(entry)
+    await ctx.deps.db.flush()
+    await ctx.deps.db.commit()
+    return f"카페인 기록했어: {cups}잔 ({cups * 100}mg)"
+
+
 ASSISTANT_TOOLS = (
     add_event,
     list_events,
@@ -206,6 +275,9 @@ ASSISTANT_TOOLS = (
     add_habit,
     list_habits,
     web_search,
+    log_mood,
+    log_sleep,
+    log_caffeine,
 )
 
 

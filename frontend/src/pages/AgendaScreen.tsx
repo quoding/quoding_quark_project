@@ -6,8 +6,7 @@ import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { TodayCard } from '@/components/widgets/productivity';
 import { QDATA } from '@/data/quarkData';
-import type { AlertKind, ScheduleTag } from '@/types/quark';
-import type { IconName } from '@/components/Icon';
+import type { ScheduleTag } from '@/types/quark';
 
 const TAG_COLOR: Record<ScheduleTag, string> = {
   회의: 'var(--acc-bright)',
@@ -297,31 +296,90 @@ function IdeaCapture() {
   );
 }
 
+interface ApiAlert {
+  id: number;
+  title: string;
+  body: string;
+  urgent: boolean;
+  read: boolean;
+  created_at: string;
+}
+
 function AlertsCard() {
-  const KIND: Record<AlertKind, IconName> = { deadline: 'flame', meeting: 'bell', review: 'check' };
+  const qc = useQueryClient();
+
+  const { data: alerts = [] } = useQuery<ApiAlert[]>({
+    queryKey: ['alerts'],
+    queryFn: () => axios.get<ApiAlert[]>('/api/alerts').then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+
+  const markRead = useMutation({
+    mutationFn: (id: number) => axios.patch(`/api/alerts/${id}/read`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+
+  const deleteAlert = useMutation({
+    mutationFn: (id: number) => axios.delete(`/api/alerts/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+
+  const urgentCount = alerts.filter((a) => a.urgent && !a.read).length;
+
+  if (alerts.length === 0) {
+    return (
+      <div className="card s6">
+        <CardHead icon="bell" title="쿼크 자동 알림" meta="0 긴급" metaAcc />
+        <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>알림 없음</span>
+      </div>
+    );
+  }
+
   return (
     <div className="card s6">
       <CardHead
         icon="bell"
         title="쿼크 자동 알림"
-        meta={QDATA.alerts.filter((a) => a.urgent).length + ' 긴급'}
-        metaAcc
+        meta={urgentCount + ' 긴급'}
+        metaAcc={urgentCount > 0}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {QDATA.alerts.map((a, i) => (
-          <div key={i} className={'alert-row' + (a.urgent ? ' urgent' : '')}>
-            <span className={'alert-ico' + (a.urgent ? ' urgent' : '')}>
-              <Icon name={KIND[a.kind]} />
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: 'var(--tx-hi)' }}>{a.title}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--tx-mid)', marginTop: 2 }}>{a.desc}</div>
+        {alerts.map((a) => {
+          const rel = (() => {
+            const diff = Date.now() - new Date(a.created_at).getTime();
+            const m = Math.floor(diff / 60000);
+            if (m < 60) return m + '분 전';
+            if (m < 1440) return Math.floor(m / 60) + '시간 전';
+            return Math.floor(m / 1440) + '일 전';
+          })();
+          return (
+            <div key={a.id} className={'alert-row' + (a.urgent ? ' urgent' : '') + (a.read ? ' read' : '')}
+              style={{ opacity: a.read ? 0.5 : 1 }}>
+              <span className={'alert-ico' + (a.urgent ? ' urgent' : '')}>
+                <Icon name="bell" />
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: 'var(--tx-hi)' }}>{a.title}</div>
+                {a.body && <div style={{ fontSize: 11.5, color: 'var(--tx-mid)', marginTop: 2 }}>{a.body}</div>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flex: 'none' }}>
+                <span className="mono" style={{ fontSize: 11, color: a.urgent ? 'var(--bad)' : 'var(--tx-mid)' }}>
+                  {rel}
+                </span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {!a.read && (
+                    <button className="pill" style={{ fontSize: 10, padding: '2px 6px' }} onClick={() => markRead.mutate(a.id)}>
+                      읽음
+                    </button>
+                  )}
+                  <button className="pill" style={{ fontSize: 10, padding: '2px 6px' }} onClick={() => deleteAlert.mutate(a.id)}>
+                    삭제
+                  </button>
+                </div>
+              </div>
             </div>
-            <span className="mono" style={{ fontSize: 11, color: a.urgent ? 'var(--bad)' : 'var(--tx-mid)', flex: 'none' }}>
-              {a.when}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

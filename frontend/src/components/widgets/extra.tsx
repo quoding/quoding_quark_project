@@ -1,16 +1,117 @@
 /* QUARK — 추가 위젯 8종: 날씨예보·일출일몰·세계시계·뉴스·대중교통·기분·수면·카페인 */
 import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { QDATA } from '@/data/quarkData';
 
-/* ---- 날씨 주간 예보 ---- */
+// ─── API types ────────────────────────────────────────────────────────────────
+
+interface ForecastDay {
+  d: string;
+  ico: string;
+  pop: number;
+  hi: number;
+  lo: number;
+}
+
+interface ForecastData {
+  forecast: ForecastDay[];
+  sunrise: string;
+  sunset: string;
+  day_len: string;
+}
+
+interface WeatherData {
+  temp: number;
+  label: string;
+  hi: number;
+  lo: number;
+  pm25: number;
+  aqi_grade: string;
+}
+
+interface NewsItem {
+  tag: string;
+  title: string;
+  src: string;
+  time: string;
+  url: string;
+}
+
+interface TransitItem {
+  line: string;
+  dest: string;
+  eta: number;
+  next: number;
+  kind: 'subway' | 'bus';
+  color: string;
+}
+
+interface MarketData {
+  crypto: { sym: string; name: string; price: number; chg: number }[];
+  fx: { sym: string; name: string; price: number; chg: number }[];
+}
+
+interface MoodData {
+  id: number;
+  date: string;
+  score: number;
+  note: string | null;
+}
+
+interface SleepData {
+  id: number;
+  date: string;
+  hours: number;
+  quality: number;
+}
+
+interface CaffeineData {
+  date: string;
+  cups_today: number;
+  mg_today: number;
+}
+
+interface DdayData {
+  id: number;
+  label: string;
+  target_date: string;
+  days: number;
+}
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+function fmtMan(n: number): string {
+  if (n >= 100_000_000) return (n / 100_000_000).toFixed(1) + '억';
+  if (n >= 10_000) return (n / 10_000).toFixed(0) + '만';
+  return n.toLocaleString();
+}
+
+// ─── 날씨 주간 예보 ───────────────────────────────────────────────────────────
+
 export function WeatherCard() {
-  const w = QDATA.weather;
-  const f = QDATA.forecast;
+  const { data: weather } = useQuery<WeatherData>({
+    queryKey: ['weather'],
+    queryFn: () => axios.get<WeatherData>('/api/system/weather').then((r) => r.data),
+    refetchInterval: 600_000,
+    retry: 1,
+  });
+
+  const { data: forecastData } = useQuery<ForecastData>({
+    queryKey: ['forecast'],
+    queryFn: () => axios.get<ForecastData>('/api/system/forecast').then((r) => r.data),
+    refetchInterval: 600_000,
+    retry: 1,
+  });
+
+  const w = weather ?? QDATA.weather;
+  const f = forecastData?.forecast ?? QDATA.forecast;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
-      <CardHead icon="cloud" title="날씨 예보" meta={w.city} />
+      <CardHead icon="cloud" title="날씨 예보" meta={QDATA.weather.city} />
       <div className="row" style={{ gap: 16, marginBottom: 16, alignItems: 'flex-start' }}>
         <div style={{ color: 'var(--warn)', width: 44, height: 44, display: 'grid', placeItems: 'center', flex: 'none' }}>
           <Icon name="sun" />
@@ -32,7 +133,7 @@ export function WeatherCard() {
               className="fc-ico"
               style={{ color: d.ico === 'sun' ? 'var(--warn)' : d.ico === 'rain' ? 'var(--acc-bright)' : 'var(--tx-mid)' }}
             >
-              <Icon name={d.ico} />
+              <Icon name={d.ico as any} />
             </span>
             <span className="mono fc-pop">{d.pop}%</span>
             <span className="mono fc-hi">{d.hi}°</span>
@@ -44,21 +145,44 @@ export function WeatherCard() {
   );
 }
 
-/* ---- 일출·일몰 + 추천 ---- */
+// ─── 일출·일몰 ────────────────────────────────────────────────────────────────
+
 export function SunCard() {
-  const s = QDATA.sun;
+  const { data: forecastData } = useQuery<ForecastData>({
+    queryKey: ['forecast'],
+    queryFn: () => axios.get<ForecastData>('/api/system/forecast').then((r) => r.data),
+    refetchInterval: 600_000,
+    retry: 1,
+  });
+
+  const { data: weather } = useQuery<WeatherData>({
+    queryKey: ['weather'],
+    queryFn: () => axios.get<WeatherData>('/api/system/weather').then((r) => r.data),
+    refetchInterval: 600_000,
+    retry: 1,
+  });
+
+  const rise = forecastData?.sunrise ?? QDATA.sun.rise;
+  const set = forecastData?.sunset ?? QDATA.sun.set;
+  const dayLen = forecastData?.day_len ?? QDATA.sun.dayLen;
+
   const now = new Date();
   const toMin = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
   };
   const cur = now.getHours() * 60 + now.getMinutes();
-  const rise = toMin(s.rise);
-  const set = toMin(s.set);
-  const pct = Math.max(0, Math.min(100, ((cur - rise) / (set - rise)) * 100));
+  const riseMin = toMin(rise);
+  const setMin = toMin(set);
+  const pct = Math.max(0, Math.min(100, ((cur - riseMin) / (setMin - riseMin)) * 100));
+
+  const pm25 = weather?.pm25 ?? 0;
+  const umbrella = (weather && 'hi' in weather) ? false : QDATA.sun.umbrella;
+  const laundry = QDATA.sun.laundry;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
-      <CardHead icon="sun" title="일출·일몰" meta={s.dayLen} />
+      <CardHead icon="sun" title="일출·일몰" meta={dayLen} />
       <div className="sun-arc">
         <svg viewBox="0 0 200 80" preserveAspectRatio="none" style={{ width: '100%', height: 64 }}>
           <path d="M6 76 A 94 94 0 0 1 194 76" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="2" strokeDasharray="3 4" />
@@ -82,31 +206,28 @@ export function SunCard() {
       </div>
       <div className="between" style={{ marginTop: 6 }}>
         <div>
-          <div className="mono" style={{ fontSize: 14, color: 'var(--tx-hi)', fontWeight: 600 }}>
-            {s.rise}
-          </div>
+          <div className="mono" style={{ fontSize: 14, color: 'var(--tx-hi)', fontWeight: 600 }}>{rise}</div>
           <div style={{ fontSize: 10.5, color: 'var(--tx-mid)' }}>일출</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div className="mono" style={{ fontSize: 14, color: 'var(--tx-hi)', fontWeight: 600 }}>
-            {s.set}
-          </div>
+          <div className="mono" style={{ fontSize: 14, color: 'var(--tx-hi)', fontWeight: 600 }}>{set}</div>
           <div style={{ fontSize: 10.5, color: 'var(--tx-mid)' }}>일몰</div>
         </div>
       </div>
       <div className="row" style={{ gap: 7, marginTop: 13, flexWrap: 'wrap' }}>
-        <span className={'reco' + (s.umbrella ? ' on' : '')}>
-          <Icon name="droplet" /> {s.umbrella ? '우산 챙겨' : '우산 필요 없어'}
+        <span className={'reco' + (umbrella ? ' on' : '')}>
+          <Icon name="droplet" /> {umbrella ? '우산 챙겨' : '우산 필요 없어'}
         </span>
-        <span className={'reco' + (s.laundry ? ' on' : '')}>
-          <Icon name="wash" /> {s.laundry ? '빨래하기 좋아' : '빨래는 미뤄'}
+        <span className={'reco' + (laundry ? ' on' : '')}>
+          <Icon name="wash" /> {laundry ? '빨래하기 좋아' : '빨래는 미뤄'}
         </span>
       </div>
     </div>
   );
 }
 
-/* ---- 세계 시계 ---- */
+// ─── 세계 시계 ────────────────────────────────────────────────────────────────
+
 export function WorldClockCard() {
   const [now, setNow] = useState(new Date());
   useEffect(() => {
@@ -130,15 +251,7 @@ export function WorldClockCard() {
             <div key={i} className="wc-row">
               <span className="wc-flag">{c.flag}</span>
               <span style={{ fontSize: 13, color: 'var(--tx-hi)', flex: 1 }}>{c.city}</span>
-              <span
-                style={{
-                  color: night ? 'var(--tx-mid)' : 'var(--warn)',
-                  width: 14,
-                  height: 14,
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
+              <span style={{ color: night ? 'var(--tx-mid)' : 'var(--warn)', width: 14, height: 14, display: 'grid', placeItems: 'center' }}>
                 <Icon name={night ? 'moon' : 'sun'} />
               </span>
               <span className="mono" style={{ fontSize: 15, color: 'var(--tx-hi)', fontWeight: 600, width: 54, textAlign: 'right' }}>
@@ -152,17 +265,33 @@ export function WorldClockCard() {
   );
 }
 
-/* ---- 뉴스 피드 ---- */
+// ─── 뉴스 피드 ────────────────────────────────────────────────────────────────
+
 export function NewsCard() {
+  const { data: news } = useQuery<NewsItem[]>({
+    queryKey: ['news'],
+    queryFn: () => axios.get<NewsItem[]>('/api/system/news').then((r) => r.data),
+    refetchInterval: 1_800_000,
+    retry: 1,
+  });
+
+  const list = news ?? QDATA.news;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
-      <CardHead icon="news" title="관심 뉴스" meta={QDATA.news.length + '건'} />
+      <CardHead icon="news" title="관심 뉴스" meta={list.length + '건'} />
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {QDATA.news.map((n, i) => (
+        {list.map((n, i) => (
           <div key={i} className="news-row">
             <span className="news-tag">{n.tag}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--tx-hi)', lineHeight: 1.4, marginBottom: 3 }}>{n.title}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--tx-hi)', lineHeight: 1.4, marginBottom: 3 }}>
+                {'url' in n && n.url ? (
+                  <a href={n.url} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                    {n.title}
+                  </a>
+                ) : n.title}
+              </div>
               <div className="mono" style={{ fontSize: 10, color: 'var(--tx-mid)' }}>
                 {n.src} · {n.time}
               </div>
@@ -174,13 +303,23 @@ export function NewsCard() {
   );
 }
 
-/* ---- 대중교통 ---- */
+// ─── 대중교통 ─────────────────────────────────────────────────────────────────
+
 export function TransitCard() {
+  const { data: transit } = useQuery<TransitItem[]>({
+    queryKey: ['transit'],
+    queryFn: () => axios.get<TransitItem[]>('/api/system/transit').then((r) => r.data),
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
+  const list = transit && transit.length > 0 ? transit : QDATA.transit;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
       <CardHead icon="bus" title="대중교통" meta="실시간" />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {QDATA.transit.map((t, i) => (
+        {list.map((t, i) => (
           <div key={i} className="tr-row">
             <span
               className="tr-line"
@@ -193,17 +332,7 @@ export function TransitCard() {
               <Icon name={t.kind === 'subway' ? 'subway' : 'bus'} />
               {t.line}
             </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: 'var(--tx-mid)',
-                flex: 1,
-                minWidth: 0,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <span style={{ fontSize: 12, color: 'var(--tx-mid)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {t.dest}
             </span>
             <div style={{ textAlign: 'right', flex: 'none' }}>
@@ -211,9 +340,7 @@ export function TransitCard() {
                 {t.eta}
                 <span style={{ fontSize: 10, color: 'var(--tx-mid)' }}>분</span>
               </div>
-              <div className="mono" style={{ fontSize: 10, color: 'var(--tx-low)' }}>
-                다음 {t.next}분
-              </div>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--tx-low)' }}>다음 {t.next}분</div>
             </div>
           </div>
         ))}
@@ -222,22 +349,55 @@ export function TransitCard() {
   );
 }
 
-/* ---- 기분 로그 ---- */
-const MOODS = ['😎', '🙂', '😐', '😤', '😴', '😞'];
+// ─── 기분 로그 ────────────────────────────────────────────────────────────────
+
+const MOOD_SCORES: { emo: string; score: number }[] = [
+  { emo: '😎', score: 5 },
+  { emo: '🙂', score: 4 },
+  { emo: '😐', score: 3 },
+  { emo: '😤', score: 2 },
+  { emo: '😴', score: 2 },
+  { emo: '😞', score: 1 },
+];
+
 export function MoodCard() {
-  const [week, setWeek] = useState(QDATA.moodSeed.map((m) => ({ ...m })));
+  const qc = useQueryClient();
   const [pick, setPick] = useState(false);
-  const todayIdx = week.length - 1;
-  const setToday = (emo: string) => {
-    setWeek((w) => w.map((d, i) => (i === todayIdx ? { ...d, emo } : d)));
-    setPick(false);
+
+  const { data: todayMood } = useQuery<MoodData | null>({
+    queryKey: ['mood-today'],
+    queryFn: () => axios.get<MoodData | null>('/api/mood').then((r) => r.data),
+    retry: 1,
+  });
+
+  const logMood = useMutation({
+    mutationFn: (score: number) =>
+      axios.post<MoodData>('/api/mood', { score }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mood-today'] });
+      setPick(false);
+    },
+  });
+
+  const scoreToEmo = (score: number) => {
+    const m = MOOD_SCORES.find((ms) => ms.score === score);
+    return m ? m.emo : '😐';
   };
+
+  const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+  const today = new Date();
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (6 - i));
+    return { day: DOW[d.getDay()], emo: i === 6 && todayMood ? scoreToEmo(todayMood.score) : '' };
+  });
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
       <CardHead icon="smile" title="기분 로그" meta="이번 주" />
       <div className="mood-week">
         {week.map((d, i) => (
-          <div key={i} className={'mood-cell' + (i === todayIdx ? ' today' : '')}>
+          <div key={i} className={'mood-cell' + (i === 6 ? ' today' : '')}>
             <span className="mood-emo">{d.emo || '·'}</span>
             <span className="mood-day">{d.day}</span>
           </div>
@@ -245,9 +405,9 @@ export function MoodCard() {
       </div>
       {pick ? (
         <div className="mood-picker">
-          {MOODS.map((e) => (
-            <button key={e} className="mood-opt" onClick={() => setToday(e)}>
-              {e}
+          {MOOD_SCORES.map((ms) => (
+            <button key={ms.emo} className="mood-opt" onClick={() => logMood.mutate(ms.score)}>
+              {ms.emo}
             </button>
           ))}
         </div>
@@ -257,28 +417,40 @@ export function MoodCard() {
           style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}
           onClick={() => setPick(true)}
         >
-          오늘 기분 {week[todayIdx].emo ? '바꾸기' : '기록하기'}
+          오늘 기분 {todayMood ? '바꾸기' : '기록하기'}
         </button>
       )}
     </div>
   );
 }
 
-/* ---- 수면 기록 ---- */
+// ─── 수면 기록 ────────────────────────────────────────────────────────────────
+
 export function SleepCard() {
   const s = QDATA.sleepSeed;
+
+  const { data: sleepData } = useQuery<SleepData | null>({
+    queryKey: ['sleep-today'],
+    queryFn: () => axios.get<SleepData | null>('/api/sleep').then((r) => r.data),
+    retry: 1,
+  });
+
+  const hours = sleepData?.hours ?? s.lastH;
+  const lastH = Math.floor(hours);
+  const lastM = Math.round((hours - lastH) * 60);
   const max = 9;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
       <CardHead icon="bed" title="수면 기록" meta={'목표 ' + s.goal + 'h'} />
       <div className="row" style={{ gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
         <div className="big-num" style={{ fontSize: 30, lineHeight: 1 }}>
-          {s.lastH}
-          <span style={{ fontSize: 14, color: 'var(--tx-mid)' }}>h</span> {s.lastM}
+          {lastH}
+          <span style={{ fontSize: 14, color: 'var(--tx-mid)' }}>h</span> {lastM}
           <span style={{ fontSize: 14, color: 'var(--tx-mid)' }}>m</span>
         </div>
-        <span style={{ fontSize: 11, color: s.lastH < s.goal ? 'var(--warn)' : 'var(--ok)', paddingBottom: 4 }}>
-          {s.lastH < s.goal ? '조금 부족했어' : '충분히 잤어'}
+        <span style={{ fontSize: 11, color: lastH < s.goal ? 'var(--warn)' : 'var(--ok)', paddingBottom: 4 }}>
+          {lastH < s.goal ? '조금 부족했어' : '충분히 잤어'}
         </span>
       </div>
       <div className="sleep-bars">
@@ -288,10 +460,9 @@ export function SleepCard() {
               <i
                 style={{
                   height: (h / max) * 100 + '%',
-                  background:
-                    h >= s.goal
-                      ? 'linear-gradient(180deg,var(--plant),#3f8a5a)'
-                      : 'linear-gradient(180deg,var(--acc-bright),var(--acc-dim))',
+                  background: h >= s.goal
+                    ? 'linear-gradient(180deg,var(--plant),#3f8a5a)'
+                    : 'linear-gradient(180deg,var(--acc-bright),var(--acc-dim))',
                 }}
               />
             </div>
@@ -303,9 +474,25 @@ export function SleepCard() {
   );
 }
 
-/* ---- 카페인 컷오프 ---- */
+// ─── 카페인 컷오프 ────────────────────────────────────────────────────────────
+
 export function CaffeineCard() {
+  const qc = useQueryClient();
   const c = QDATA.caffeine;
+
+  const { data: cafData } = useQuery<CaffeineData>({
+    queryKey: ['caffeine-today'],
+    queryFn: () => axios.get<CaffeineData>('/api/caffeine').then((r) => r.data),
+    retry: 1,
+  });
+
+  const addCup = useMutation({
+    mutationFn: () => axios.post<CaffeineData>('/api/caffeine').then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['caffeine-today'] }),
+  });
+
+  const cupsToday = cafData?.cups_today ?? c.cupsToday;
+
   const now = new Date();
   const toMin = (t: string) => {
     const [h, m] = t.split(':').map(Number);
@@ -316,9 +503,10 @@ export function CaffeineCard() {
   const left = cutoff - cur;
   const past = left <= 0;
   const txt = past ? '컷오프 지남' : `${Math.floor(left / 60)}시간 ${left % 60}분 남음`;
+
   return (
     <div className="card hov" style={{ height: '100%' }}>
-      <CardHead icon="coffee" title="카페인 컷오프" meta={'오늘 ' + c.cupsToday + '잔'} />
+      <CardHead icon="coffee" title="카페인 컷오프" meta={'오늘 ' + cupsToday + '잔'} />
       <div style={{ display: 'grid', placeItems: 'center', textAlign: 'center', padding: '6px 0 12px' }}>
         <div style={{ color: past ? 'var(--bad)' : 'var(--warn)', width: 34, height: 34, marginBottom: 8 }}>
           <Icon name="coffee" />
@@ -330,8 +518,106 @@ export function CaffeineCard() {
           컷오프 {c.cutoff} · 취침 {c.bedtime} 기준
         </div>
       </div>
-      <div className="caf-note">
+      <div className="caf-note" style={{ marginBottom: 10 }}>
         {past ? '이제 마시면 잠 못 자 — 디카페인 권장 ☕' : '아직 괜찮아. ' + c.cutoff + ' 전까진 OK'}
+      </div>
+      <button className="pill" style={{ width: '100%', justifyContent: 'center' }} onClick={() => addCup.mutate()}>
+        <Icon name="plus" /> 커피 +1잔
+      </button>
+    </div>
+  );
+}
+
+// ─── D-Day ────────────────────────────────────────────────────────────────────
+
+export function DdayCard() {
+  const { data: items } = useQuery<DdayData[]>({
+    queryKey: ['dday'],
+    queryFn: () => axios.get<DdayData[]>('/api/dday').then((r) => r.data),
+    retry: 1,
+  });
+
+  const list = items ?? QDATA.dday;
+
+  return (
+    <div className="card hov s3" style={{ height: '100%' }}>
+      <CardHead icon="target" title="D-Day" meta={list.length + '개'} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {list.map((d, i) => (
+          <div key={i} className="between" style={{ alignItems: 'flex-end' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {d.label}
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--tx-mid)' }}>{d.days <= 14 ? '곧 다가와' : '여유 있어'}</div>
+            </div>
+            <div className="mono" style={{ fontSize: 22, fontWeight: 700, color: d.days <= 14 ? 'var(--acc-bright)' : 'var(--tx)', lineHeight: 1, flex: 'none' }}>
+              D-{d.days}
+            </div>
+          </div>
+        ))}
+        {list.length === 0 && (
+          <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>D-Day 없음</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── MarketCard (시세) ────────────────────────────────────────────────────────
+
+export function MarketCard() {
+  const { data: market } = useQuery<MarketData>({
+    queryKey: ['market'],
+    queryFn: () => axios.get<MarketData>('/api/system/market').then((r) => r.data),
+    refetchInterval: 300_000,
+    retry: 1,
+  });
+
+  const cryptoList = market?.crypto ?? QDATA.crypto;
+  const fxList = market?.fx ?? QDATA.fx;
+
+  return (
+    <div className="card hov s3" style={{ height: '100%' }}>
+      <CardHead icon="coin" title="시세" meta="실시간" />
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {cryptoList.map((c, i) => (
+          <div key={i} className="between" style={{ padding: '7px 0' }}>
+            <div className="row" style={{ gap: 9, minWidth: 0 }}>
+              <span className="mkt-sym">{c.sym}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--tx-mid)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.name}
+              </span>
+            </div>
+            <div style={{ textAlign: 'right', flex: 'none' }}>
+              <div className="mono" style={{ fontSize: 12.5, color: 'var(--tx-hi)', fontWeight: 600 }}>
+                ₩{fmtMan(c.price)}
+              </div>
+              <div className="mono" style={{ fontSize: 10.5, color: c.chg >= 0 ? 'var(--ok)' : 'var(--bad)', display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
+                <span style={{ width: 10, height: 10 }}>
+                  <Icon name={c.chg >= 0 ? 'arrowUp' : 'arrowDown'} />
+                </span>
+                {Math.abs(c.chg)}%
+              </div>
+            </div>
+          </div>
+        ))}
+        <div style={{ height: 1, background: 'var(--inset-line)', margin: '4px 0' }} />
+        {fxList.map((c, i) => (
+          <div key={i} className="between" style={{ padding: '7px 0' }}>
+            <div className="row" style={{ gap: 9, minWidth: 0 }}>
+              <span className="mkt-sym">{c.sym}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--tx-mid)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.name}
+              </span>
+            </div>
+            <div style={{ textAlign: 'right', flex: 'none' }}>
+              <div className="mono" style={{ fontSize: 12.5, color: 'var(--tx-hi)', fontWeight: 600 }}>
+                ₩{fmtMan(c.price)}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

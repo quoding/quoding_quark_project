@@ -48,6 +48,115 @@ def _pm25_grade(pm25: float) -> str:
     return "매우나쁨"
 
 
+_WMO_ICO: dict[int, str] = {
+    0: "sun",
+    1: "sun",
+    2: "cloud",
+    3: "cloud",
+    45: "cloud",
+    48: "cloud",
+    51: "rain",
+    53: "rain",
+    55: "rain",
+    61: "rain",
+    63: "rain",
+    65: "rain",
+    71: "snow",
+    73: "snow",
+    75: "snow",
+    80: "rain",
+    81: "rain",
+    82: "rain",
+    95: "storm",
+    96: "storm",
+    99: "storm",
+}
+
+_DAY_KO = ["일", "월", "화", "수", "목", "금", "토"]
+
+
+def _wmo_ico(code: int) -> str:
+    return _WMO_ICO.get(code, "cloud")
+
+
+_forecast_cache: dict[str, Any] = {}
+_FORECAST_TTL = 600.0  # 10 minutes
+
+
+async def get_forecast() -> dict[str, Any]:
+    """Fetch 7-day daily forecast + sunrise/sunset from Open-Meteo."""
+    import time
+
+    if _forecast_cache.get("ts") and time.monotonic() - _forecast_cache["ts"] < _FORECAST_TTL:
+        return _forecast_cache["data"]
+
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": settings.weather_lat,
+                    "longitude": settings.weather_lon,
+                    "daily": (
+                        "temperature_2m_max,temperature_2m_min,"
+                        "precipitation_probability_max,weather_code,"
+                        "sunrise,sunset"
+                    ),
+                    "timezone": "Asia/Seoul",
+                    "forecast_days": 7,
+                },
+            )
+            resp.raise_for_status()
+            wd: dict[str, Any] = resp.json()
+
+        daily = wd["daily"]
+        days: list[dict[str, Any]] = []
+        for i in range(7):
+            date_str: str = daily["time"][i]
+            import datetime as _dt
+
+            d = _dt.date.fromisoformat(date_str)
+            days.append(
+                {
+                    "d": _DAY_KO[d.weekday()] if i > 0 else "오늘",
+                    "ico": _wmo_ico(daily["weather_code"][i]),
+                    "pop": daily["precipitation_probability_max"][i] or 0,
+                    "hi": round(daily["temperature_2m_max"][i], 1),
+                    "lo": round(daily["temperature_2m_min"][i], 1),
+                }
+            )
+
+        sunrise_raw: str = daily["sunrise"][0]
+        sunset_raw: str = daily["sunset"][0]
+        sunrise = sunrise_raw[11:16] if len(sunrise_raw) >= 16 else sunrise_raw
+        sunset = sunset_raw[11:16] if len(sunset_raw) >= 16 else sunset_raw
+
+        import datetime as _dt2
+
+        def _to_min(t: str) -> int:
+            h, m = map(int, t.split(":"))
+            return h * 60 + m
+
+        rise_min = _to_min(sunrise)
+        set_min = _to_min(sunset)
+        day_total = set_min - rise_min
+        day_len = f"{day_total // 60}h {day_total % 60}m"
+
+        result: dict[str, Any] = {
+            "forecast": days,
+            "sunrise": sunrise,
+            "sunset": sunset,
+            "day_len": day_len,
+        }
+        _forecast_cache["data"] = result
+        _forecast_cache["ts"] = time.monotonic()
+        return result
+    except Exception as exc:
+        logger.warning("Forecast fetch failed: %s", exc)
+        return {"error": str(exc)}
+
+
 async def get_current_weather() -> dict[str, Any]:
     """Fetch current weather + air quality from Open-Meteo (no API key required).
 

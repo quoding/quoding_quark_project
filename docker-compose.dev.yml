@@ -6,6 +6,7 @@ services:
       target: dev
     volumes:
       - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
