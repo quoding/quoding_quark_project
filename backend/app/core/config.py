@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     weather_lat: float = 37.5665
     weather_lon: float = 126.9780
 
+    # Host helper (reboot / Wake-on-LAN — runs outside Docker on the host)
+    host_helper_url: str = "http://172.19.0.1:8999"
+    laptop_mac: str = ""
+
     # ── Secrets (Docker Secrets or env fallback) ────────────────────────────
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -90,6 +94,11 @@ class Settings(BaseSettings):
     @property
     def discord_token(self) -> str:
         return _read_secret("discord_token") or ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def host_helper_token(self) -> str:
+        return _read_secret("host_helper_token") or ""
 
     # ── Derived DSNs ────────────────────────────────────────────────────────
     @computed_field  # type: ignore[prop-decorator]

@@ -340,6 +340,35 @@ function ApiCard() {
   );
 }
 
+function PowerControlCard() {
+  const reboot = useMutation({
+    mutationFn: () => axios.post<{ ok: boolean }>('/api/system/reboot').then((r) => r.data),
+  });
+  const wakeLaptop = useMutation({
+    mutationFn: () => axios.post<{ ok: boolean }>('/api/system/wake-laptop').then((r) => r.data),
+  });
+
+  return (
+    <div className="card s6">
+      <CardHead icon="power" title="전원 제어" meta="미니PC · 노트북" />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button
+          className="pill"
+          disabled={reboot.isPending}
+          onClick={() => {
+            if (confirm('미니PC를 재부팅할까요? 1~2분간 대시보드에 접속할 수 없습니다.')) reboot.mutate();
+          }}
+        >
+          {reboot.isPending ? '재부팅 요청 중…' : reboot.isSuccess ? '재부팅 요청됨 🔄' : '미니PC 재부팅'}
+        </button>
+        <button className="pill" disabled={wakeLaptop.isPending} onClick={() => wakeLaptop.mutate()}>
+          {wakeLaptop.isPending ? '신호 전송 중…' : wakeLaptop.isSuccess ? '깨우기 신호 전송됨 💻' : '노트북 켜기 (WoL)'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EmbeddingToggleCard() {
   const qc = useQueryClient();
 
@@ -382,6 +411,7 @@ export default function MonitorScreen() {
     <div className="canvas scroll">
       <div className="grid">
         <ServerCard />
+        <PowerControlCard />
         <ServicesCard />
         <GithubCard />
         <DockerCard />

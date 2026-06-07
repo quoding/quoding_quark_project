@@ -1,0 +1,3 @@
+# Allow muya98 to reboot without a password — scoped to this exact binary only.
+# Installed at /etc/sudoers.d/quark-reboot
+muya98 ALL=(ALL) NOPASSWD: /usr/sbin/reboot

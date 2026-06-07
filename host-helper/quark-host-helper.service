@@ -1,0 +1,14 @@
+[Unit]
+Description=QUARK host helper (reboot / Wake-on-LAN for quark-api)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=muya98
+ExecStart=/usr/bin/python3 /home/muya98/quoding/host-helper/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

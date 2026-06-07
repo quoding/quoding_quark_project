@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai import RunContext
 
 from app.agents.deps import QuarkDeps
+from app.core.config import get_settings
+from app.services.host_helper import reboot_host, wake_on_lan
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -107,6 +109,21 @@ async def water_plant(ctx: RunContext[QuarkDeps]) -> str:
     return "식물에 물 줬어 🌱"
 
 
+async def reboot_mini_pc(ctx: RunContext[QuarkDeps]) -> str:
+    """미니PC(QUARK 서버 본체)를 재부팅한다."""
+    ok = await reboot_host()
+    return "미니PC를 재부팅할게 — 1~2분 후에 다시 돌아올 거야 🔄" if ok else "재부팅 요청에 실패했어 — 호스트 헬퍼 상태를 확인해줘."
+
+
+async def wake_laptop(ctx: RunContext[QuarkDeps]) -> str:
+    """집 노트북을 Wake-on-LAN으로 깨운다 (전원을 켠다)."""
+    mac = get_settings().laptop_mac
+    if not mac:
+        raise ValueError("laptop_mac이 설정되어 있지 않음")
+    ok = await wake_on_lan(mac)
+    return "노트북 깨우는 신호 보냈어 — 잠시 후 켜질 거야 💻" if ok else "WoL 신호 전송에 실패했어 — 호스트 헬퍼 상태를 확인해줘."
+
+
 async def get_home_state(ctx: RunContext[QuarkDeps]) -> dict[str, Any]:
     """현재 집 상태 스냅샷을 읽는다 (제어 명령은 보내지 않음)."""
     return {
@@ -124,6 +141,8 @@ HOME_TOOLS = (
     set_ac,
     apply_scene,
     water_plant,
+    reboot_mini_pc,
+    wake_laptop,
     get_home_state,
 )
 

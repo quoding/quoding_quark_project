@@ -5,9 +5,11 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.services.docker_stats import get_docker_stats
 from app.services.embeddings import is_embedding_enabled, set_embedding_enabled
 from app.services.github_stats import get_github_stats
+from app.services.host_helper import reboot_host, wake_on_lan
 from app.services.market import get_market_data
 from app.services.news import get_news
 from app.services.openai_usage import get_openai_usage
@@ -93,3 +95,18 @@ async def get_embedding_toggle() -> dict[str, bool]:
 async def patch_embedding_toggle(body: EmbeddingToggleIn) -> dict[str, bool]:
     await set_embedding_enabled(body.enabled)
     return {"enabled": body.enabled}
+
+
+@router.post("/reboot")
+async def reboot() -> dict[str, bool]:
+    """미니PC를 재부팅한다 (호스트 헬퍼 경유)."""
+    return {"ok": await reboot_host()}
+
+
+@router.post("/wake-laptop")
+async def wake_laptop_endpoint() -> dict[str, bool]:
+    """Wake-on-LAN으로 노트북을 깨운다 (호스트 헬퍼 경유)."""
+    mac = get_settings().laptop_mac
+    if not mac:
+        return {"ok": False}
+    return {"ok": await wake_on_lan(mac)}
