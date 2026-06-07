@@ -16,14 +16,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.memory import AgentMemory, DailyEpisode
-from app.services.embeddings import get_embedding
+from app.services.embeddings import get_embedding, is_embedding_enabled
 from app.services.memory import pgvector_search, redis_get_conversation, save_daily_summary
 
 logger = logging.getLogger(__name__)
 
 
 async def save_memory(content: str, meta: dict[str, Any], db: AsyncSession) -> None:
-    """Embed *content* and persist an ``AgentMemory`` row."""
+    """Embed *content* and persist an ``AgentMemory`` row. No-op when embedding is toggled off."""
+    if not await is_embedding_enabled():
+        return
     embedding = await get_embedding(content)
     memory = AgentMemory(content=content, meta=meta, embedding=embedding)
     db.add(memory)
@@ -31,7 +33,9 @@ async def save_memory(content: str, meta: dict[str, Any], db: AsyncSession) -> N
 
 
 async def retrieve(query: str, db: AsyncSession, k: int = 5) -> list[dict[str, Any]]:
-    """Return top-*k* memories most similar to *query*."""
+    """Return top-*k* memories most similar to *query*. Empty when embedding is toggled off."""
+    if not await is_embedding_enabled():
+        return []
     embedding = await get_embedding(query)
     results: list[dict[str, Any]] = await pgvector_search(db, embedding, limit=k)
     return results

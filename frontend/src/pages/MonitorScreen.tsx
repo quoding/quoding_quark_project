@@ -1,6 +1,6 @@
 /* QUARK — 모니터링 & 시스템 화면 (서버 게이지·서비스·GitHub·Docker·API 비용) */
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { CardHead, Gauge } from '@/components/common';
 import { QDATA, fmt } from '@/data/quarkData';
@@ -340,6 +340,43 @@ function ApiCard() {
   );
 }
 
+function EmbeddingToggleCard() {
+  const qc = useQueryClient();
+
+  const { data } = useQuery<{ enabled: boolean }>({
+    queryKey: ['embedding-toggle'],
+    queryFn: () => axios.get<{ enabled: boolean }>('/api/system/embedding-toggle').then((r) => r.data),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) =>
+      axios.patch<{ enabled: boolean }>('/api/system/embedding-toggle', { enabled }).then((r) => r.data),
+    onSuccess: (updated) => qc.setQueryData(['embedding-toggle'], updated),
+  });
+
+  const enabled = data?.enabled ?? true;
+
+  return (
+    <div className="card s6">
+      <CardHead
+        icon="sliders"
+        title="RAG 임베딩"
+        meta={enabled ? '켜짐' : '꺼짐 (테스트 절약 모드)'}
+        metaAcc={enabled}
+      />
+      <div className="between">
+        <span style={{ fontSize: 12.5, color: 'var(--tx-mid)' }}>
+          대화 기억 저장·검색에 OpenAI 임베딩 API 사용
+        </span>
+        <div
+          className={'sw' + (enabled ? ' on' : '')}
+          onClick={() => toggle.mutate(!enabled)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function MonitorScreen() {
   return (
     <div className="canvas scroll">
@@ -348,6 +385,7 @@ export default function MonitorScreen() {
         <ServicesCard />
         <GithubCard />
         <DockerCard />
+        <EmbeddingToggleCard />
         <ApiCard />
       </div>
     </div>

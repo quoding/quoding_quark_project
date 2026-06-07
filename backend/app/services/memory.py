@@ -48,9 +48,9 @@ async def pgvector_search(
 ) -> list[dict]:
     result = await db.execute(
         text(
-            "SELECT content, metadata, 1 - (embedding <=> :emb::vector) AS similarity "
-            "FROM memory_embeddings "
-            "ORDER BY embedding <=> :emb::vector "
+            "SELECT content, metadata, 1 - (embedding <=> CAST(:emb AS vector)) AS similarity "
+            "FROM agent_memories "
+            "ORDER BY embedding <=> CAST(:emb AS vector) "
             "LIMIT :limit"
         ),
         {"emb": str(embedding), "limit": limit},

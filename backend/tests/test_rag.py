@@ -29,6 +29,12 @@ def mock_db() -> AsyncMock:
     return AsyncMock(spec=AsyncSession)
 
 
+@pytest.fixture(autouse=True)
+def _embedding_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """기본적으로 임베딩 토글이 켜진 것으로 가정 — Redis 실호출 방지."""
+    monkeypatch.setattr("app.services.rag.is_embedding_enabled", AsyncMock(return_value=True))
+
+
 # ── save_memory ──────────────────────────────────────────────────────────────
 
 

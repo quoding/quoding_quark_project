@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app.services.docker_stats import get_docker_stats
+from app.services.embeddings import is_embedding_enabled, set_embedding_enabled
 from app.services.github_stats import get_github_stats
 from app.services.market import get_market_data
 from app.services.news import get_news
@@ -75,3 +77,19 @@ async def transit_data() -> list[dict[str, Any]]:
 async def openai_usage() -> dict[str, Any]:
     """Return today's OpenAI API usage (daily cache)."""
     return await get_openai_usage()
+
+
+class EmbeddingToggleIn(BaseModel):
+    enabled: bool
+
+
+@router.get("/embedding-toggle")
+async def get_embedding_toggle() -> dict[str, bool]:
+    """RAG 임베딩(저장/검색) 활성화 여부 — 테스트 단계 토큰 절약용 토글."""
+    return {"enabled": await is_embedding_enabled()}
+
+
+@router.patch("/embedding-toggle")
+async def patch_embedding_toggle(body: EmbeddingToggleIn) -> dict[str, bool]:
+    await set_embedding_enabled(body.enabled)
+    return {"enabled": body.enabled}
