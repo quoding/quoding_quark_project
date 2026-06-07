@@ -90,7 +90,7 @@ JSON만 반환 (설명 없이):"""
             model=settings.openai_model_default,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=200,
+            max_completion_tokens=200,
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content or "{}")
