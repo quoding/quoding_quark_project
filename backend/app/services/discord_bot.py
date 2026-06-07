@@ -6,6 +6,7 @@ Existing per-channel chat functionality is fully preserved.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -40,6 +41,7 @@ class QuarkBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self._redis: aioredis.Redis | None = None
         self._db_factory: async_sessionmaker[AsyncSession] | None = None
+        self._reminder_poll_task: asyncio.Task[None] | None = None
 
     async def setup_hook(self) -> None:
         await mqtt_bridge.start()
@@ -53,12 +55,27 @@ class QuarkBot(commands.Bot):
         from app.services import reminder_service
         reminder_service.set_bot(self)
 
+        # Run the reminder poll loop here — _bot is a process-local global, and
+        # this is the only process that ever has a live bot instance to send with.
+        # Wait for on_ready first so the gateway cache (guilds/channels) is populated
+        # before the first poll tick — otherwise get_channel() returns None at boot.
+        async def _delayed_reminder_loop() -> None:
+            await self.wait_until_ready()
+            await reminder_service.reminder_poll_loop(self._db_factory)
+
+        self._reminder_poll_task = asyncio.create_task(_delayed_reminder_loop())
+
         # Load reminder Cog
         await self.load_extension("app.discord.cogs.reminder")
 
         # Sync slash commands to Discord
         await self.tree.sync()
         logger.info("Slash commands synced")
+
+    async def close(self) -> None:
+        if self._reminder_poll_task is not None:
+            self._reminder_poll_task.cancel()
+        await super().close()
 
     async def on_ready(self) -> None:
         logger.info("QUARK Discord bot connected as %s", self.user)
