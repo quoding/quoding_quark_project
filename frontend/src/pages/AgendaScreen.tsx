@@ -5,7 +5,6 @@ import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { TodayCard } from '@/components/widgets/productivity';
-import { QDATA } from '@/data/quarkData';
 import type { ScheduleTag } from '@/types/quark';
 
 const TAG_COLOR: Record<ScheduleTag, string> = {

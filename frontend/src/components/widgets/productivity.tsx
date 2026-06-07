@@ -4,8 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
-import { useHomeStore } from '@/stores/homeStore';
-import { QDATA } from '@/data/quarkData';
 import type { ScheduleTag } from '@/types/quark';
 
 interface ApiEvent {

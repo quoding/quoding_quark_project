@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,6 +19,11 @@ settings = get_settings()
 # e.g.: quark/sensor/plant-01/moisture, quark/cmd/light-01/power
 
 TOPIC_PREFIX = "quark"
+
+# Each process needs its own MQTT client ID — the broker disconnects the prior
+# session whenever a duplicate ID connects, which caused api/discord-bot to
+# repeatedly kick each other off when both used settings.mqtt_client_id as-is.
+_CLIENT_ID = f"{settings.mqtt_client_id}-{uuid.uuid4().hex[:8]}"
 
 
 @dataclass
@@ -51,7 +57,7 @@ class MqttBridge:
                     port=settings.mqtt_port,
                     username=settings.mqtt_user,
                     password=settings.mqtt_password,
-                    client_id=settings.mqtt_client_id,
+                    client_id=_CLIENT_ID,
                     keepalive=60,
                 ) as client:
                     self._client = client

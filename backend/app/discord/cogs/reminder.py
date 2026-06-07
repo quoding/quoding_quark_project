@@ -218,6 +218,4 @@ class ReminderCog(commands.Cog, name="Reminder"):
 
 
 async def setup(bot: commands.Bot) -> None:
-    cog = ReminderCog(bot)
-    await bot.add_cog(cog)
-    bot.tree.add_command(cog.reminders_group)
+    await bot.add_cog(ReminderCog(bot))

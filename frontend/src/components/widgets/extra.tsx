@@ -176,7 +176,6 @@ export function SunCard() {
   const setMin = toMin(set);
   const pct = Math.max(0, Math.min(100, ((cur - riseMin) / (setMin - riseMin)) * 100));
 
-  const pm25 = weather?.pm25 ?? 0;
   const umbrella = (weather && 'hi' in weather) ? false : QDATA.sun.umbrella;
   const laundry = QDATA.sun.laundry;
 

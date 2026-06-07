@@ -80,6 +80,7 @@ export interface NewsItem {
   src: string;
   tag: string;
   time: string;
+  url?: string;
 }
 export interface TransitItem {
   line: string;
