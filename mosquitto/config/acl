@@ -1,0 +1,8 @@
+# quark — backend (api/discord-bot/bridge): full access
+user quark
+topic readwrite quark/#
+
+# quark-ui — browser frontend: read all state, publish only to commands
+user quark-ui
+topic read quark/#
+topic write quark/cmd/#

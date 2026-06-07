@@ -37,6 +37,8 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
         VITE_MQTT_URL: ${VITE_MQTT_URL:-ws://quark.quoding.com:9001}
+        VITE_MQTT_USER: ${VITE_MQTT_USER:-quark-ui}
+        VITE_MQTT_PASS: ${VITE_MQTT_PASS}
     container_name: quark-frontend
     restart: unless-stopped
     networks:
@@ -97,12 +99,13 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - 'rm -f /tmp/pwfile && mosquitto_passwd -b -c /tmp/pwfile quark "$$(cat /run/secrets/mosquitto_password)" && chown mosquitto /tmp/pwfile && exec mosquitto -c /mosquitto/config/mosquitto.conf'
+      - 'rm -f /tmp/pwfile && mosquitto_passwd -b -c /tmp/pwfile quark "$$(cat /run/secrets/mosquitto_password)" && mosquitto_passwd -b /tmp/pwfile quark-ui "$$(cat /run/secrets/mqtt_ui_password)" && chown mosquitto /tmp/pwfile && exec mosquitto -c /mosquitto/config/mosquitto.conf'
     volumes:
       - ./mosquitto/config:/mosquitto/config:ro
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
       - ./secrets/mosquitto_password:/run/secrets/mosquitto_password:ro
+      - ./secrets/mqtt_ui_password:/run/secrets/mqtt_ui_password:ro
     networks:
       - quark-internal
     expose:

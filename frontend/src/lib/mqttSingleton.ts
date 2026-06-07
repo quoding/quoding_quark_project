@@ -2,7 +2,7 @@ import mqtt, { type MqttClient } from "mqtt";
 import { create } from "zustand";
 
 const MQTT_URL = import.meta.env.VITE_MQTT_URL ?? "ws://localhost:9001";
-const MQTT_USER = import.meta.env.VITE_MQTT_USER ?? "quark";
+const MQTT_USER = import.meta.env.VITE_MQTT_USER ?? "";
 const MQTT_PASS = import.meta.env.VITE_MQTT_PASS ?? "";
 
 interface ConnState {

@@ -17,8 +17,12 @@ FROM deps AS build
 COPY . .
 ARG VITE_API_URL
 ARG VITE_MQTT_URL
+ARG VITE_MQTT_USER
+ARG VITE_MQTT_PASS
 ENV VITE_API_URL=$VITE_API_URL \
-    VITE_MQTT_URL=$VITE_MQTT_URL
+    VITE_MQTT_URL=$VITE_MQTT_URL \
+    VITE_MQTT_USER=$VITE_MQTT_USER \
+    VITE_MQTT_PASS=$VITE_MQTT_PASS
 RUN npm run build
 
 # ── Production (Nginx) ────────────────────────────────────────────────────────
