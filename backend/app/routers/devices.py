@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import verify_siri_token
 from app.core.database import get_db
 from app.models.device import Device
 from app.services.mqtt_bridge import mqtt_bridge
@@ -22,7 +23,7 @@ class CommandRequest(BaseModel):
     value: Any
 
 
-@router.post("/cmd")
+@router.post("/cmd", dependencies=[Depends(verify_siri_token)])
 async def send_command(req: CommandRequest) -> dict[str, Any]:
     """Publish a device command to MQTT (quark/cmd/{device}/{metric})."""
     await mqtt_bridge.cmd(req.device_id, req.metric, req.value)

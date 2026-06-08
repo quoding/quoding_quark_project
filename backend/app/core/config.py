@@ -100,6 +100,11 @@ class Settings(BaseSettings):
     def host_helper_token(self) -> str:
         return _read_secret("host_helper_token") or ""
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def siri_api_key(self) -> str:
+        return _read_secret("siri_api_key") or os.environ.get("SIRI_API_KEY", "")
+
     # ── Derived DSNs ────────────────────────────────────────────────────────
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -9,13 +9,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
+from pydantic_ai.messages import ModelMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.deps import QuarkDeps
@@ -23,7 +17,7 @@ from app.agents.quark_agent import quark_agent
 from app.agents.routing import build_model
 from app.core.database import get_db_optional
 from app.core.redis import get_redis
-from app.services.memory import redis_append_conversation, redis_get_conversation
+from app.services.memory import redis_append_conversation, redis_get_conversation, to_message_history
 from app.services.mqtt_bridge import mqtt_bridge
 
 logger = logging.getLogger(__name__)
@@ -33,18 +27,6 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     session_id: str
     message: str
-
-
-def _to_message_history(turns: list[dict[str, str]]) -> list[ModelMessage]:
-    """Convert stored Redis turns into Pydantic AI message history."""
-    history: list[ModelMessage] = []
-    for turn in turns:
-        content = turn.get("content", "")
-        if turn.get("role") == "user":
-            history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
-        else:
-            history.append(ModelResponse(parts=[TextPart(content=content)]))
-    return history
 
 
 def _sse(data: dict[str, object]) -> str:
@@ -100,7 +82,7 @@ async def chat_stream(
     db: Annotated[AsyncSession | None, Depends(get_db_optional)],
 ) -> StreamingResponse:
     turns = await redis_get_conversation(redis, req.session_id)
-    history = _to_message_history(turns)
+    history = to_message_history(turns)
     await redis_append_conversation(redis, req.session_id, "user", req.message)
 
     return StreamingResponse(

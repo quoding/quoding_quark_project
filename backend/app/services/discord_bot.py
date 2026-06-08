@@ -20,8 +20,7 @@ from app.agents.routing import build_model
 from app.core.config import get_settings
 from app.core.redis import get_pool
 from app.models.reminder import Reminder
-from app.routers.chat import _to_message_history
-from app.services.memory import redis_append_conversation, redis_get_conversation
+from app.services.memory import redis_append_conversation, redis_get_conversation, to_message_history
 from app.services.mqtt_bridge import mqtt_bridge
 
 import redis.asyncio as aioredis
@@ -108,7 +107,7 @@ class QuarkBot(commands.Bot):
         history: list[ModelMessage] = []
         if redis is not None:
             turns = await redis_get_conversation(redis, session_id)
-            history = _to_message_history(turns)
+            history = to_message_history(turns)
             await redis_append_conversation(redis, session_id, "user", content)
 
         context_note = ""

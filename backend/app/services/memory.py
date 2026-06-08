@@ -6,6 +6,13 @@ from datetime import date
 from typing import Any
 
 import redis.asyncio as aioredis
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +46,18 @@ async def redis_get_conversation(redis: aioredis.Redis, session_id: str) -> list
     key = f"conv:{session_id}"
     entries = await redis.lrange(key, 0, -1)
     return [json.loads(e) for e in entries]
+
+
+def to_message_history(turns: list[dict[str, str]]) -> list[ModelMessage]:
+    """Convert stored Redis turns into Pydantic AI message history."""
+    history: list[ModelMessage] = []
+    for turn in turns:
+        content = turn.get("content", "")
+        if turn.get("role") == "user":
+            history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
+        else:
+            history.append(ModelResponse(parts=[TextPart(content=content)]))
+    return history
 
 
 # ── Long-term: pgvector RAG ──────────────────────────────────────────────────
