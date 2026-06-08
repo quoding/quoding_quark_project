@@ -1,7 +1,6 @@
 """Tests for assistant agent tools (add_event, add_todo, web_search, etc.)."""
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,13 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agents.deps import QuarkDeps
+from app.services.google_calendar import GoogleCalendarError
 from app.services.mqtt_bridge import MqttBridge
 from app.tools.assistant import (
     add_event,
     add_idea,
     add_todo,
+    cancel_event,
     complete_todo,
     list_events,
+    update_event,
     web_search,
 )
 
@@ -28,18 +30,6 @@ def _make_ctx(db: Any = None) -> Any:
 
 
 # ── no-DB fallbacks ───────────────────────────────────────────────────────────
-
-
-async def test_add_event_no_db() -> None:
-    ctx = _make_ctx(db=None)
-    result = await add_event(ctx, "미팅", "2026-06-10T14:00:00")
-    assert "DB" in result
-
-
-async def test_list_events_no_db() -> None:
-    ctx = _make_ctx(db=None)
-    result = await list_events(ctx)
-    assert "DB" in result
 
 
 async def test_add_todo_no_db() -> None:
@@ -63,21 +53,22 @@ async def test_add_idea_no_db() -> None:
 # ── with mock DB ─────────────────────────────────────────────────────────────
 
 
-async def test_add_event_with_db() -> None:
-    mock_db = AsyncMock()
-    mock_db.add = MagicMock()
-    mock_db.flush = AsyncMock()
-    ctx = _make_ctx(db=mock_db)
-    result = await add_event(ctx, "데일리 회의", "2026-06-10T09:00:00")
+async def test_add_event_creates_google_calendar_event() -> None:
+    ctx = _make_ctx(db=None)
+    fake_create = AsyncMock(return_value={"id": "evt1", "title": "데일리 회의", "start": "2026-06-10T09:00:00+09:00", "end": "2026-06-10T10:00:00+09:00", "all_day": False})
+    with patch("app.services.google_calendar.create_event", fake_create):
+        result = await add_event(ctx, "데일리 회의", "2026-06-10T09:00:00")
     assert "저장했어" in result
-    mock_db.add.assert_called_once()
+    assert "데일리 회의" in result
+    fake_create.assert_awaited_once_with("데일리 회의", "2026-06-10T09:00:00", None)
 
 
-async def test_add_event_invalid_date() -> None:
-    mock_db = AsyncMock()
-    ctx = _make_ctx(db=mock_db)
-    result = await add_event(ctx, "테스트", "not-a-date")
-    assert "오류" in result
+async def test_add_event_reports_failure() -> None:
+    ctx = _make_ctx(db=None)
+    fake_create = AsyncMock(side_effect=GoogleCalendarError("연동 설정 없음"))
+    with patch("app.services.google_calendar.create_event", fake_create):
+        result = await add_event(ctx, "테스트", "2026-06-10T09:00:00")
+    assert "실패" in result
 
 
 async def test_add_todo_with_db() -> None:
@@ -98,24 +89,49 @@ async def test_add_idea_with_db() -> None:
     assert "저장했어" in result
 
 
-async def test_list_events_today(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.models.agenda import ScheduledEvent
+async def test_list_events_formats_id_and_time() -> None:
+    ctx = _make_ctx(db=None)
+    fake_list = AsyncMock(return_value=[
+        {"id": "evt1", "title": "빌드 회의", "start": "2026-06-06T10:30:00+09:00", "end": "2026-06-06T11:30:00+09:00", "all_day": False},
+        {"id": "evt2", "title": "워크숍", "start": "2026-06-06", "end": "2026-06-07", "all_day": True},
+    ])
+    with patch("app.services.google_calendar.list_events", fake_list):
+        result = await list_events(ctx, "2026-06-06")
+    assert "[evt1] 10:30 빌드 회의" in result
+    assert "[evt2] 종일 워크숍" in result
 
-    ev = MagicMock(spec=ScheduledEvent)
-    ev.scheduled_at = datetime(2026, 6, 6, 10, 30, tzinfo=UTC)
-    ev.title = "빌드 회의"
-    ev.tag = "회의"
 
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [ev]
+async def test_list_events_empty() -> None:
+    ctx = _make_ctx(db=None)
+    with patch("app.services.google_calendar.list_events", AsyncMock(return_value=[])):
+        result = await list_events(ctx, "2026-06-06")
+    assert "일정 없음" in result
 
-    mock_db = AsyncMock()
-    mock_db.execute = AsyncMock(return_value=mock_result)
 
-    monkeypatch.setattr("app.tools.assistant.date", MagicMock(today=lambda: date(2026, 6, 6), fromisoformat=date.fromisoformat))
-    ctx = _make_ctx(db=mock_db)
-    result = await list_events(ctx)
-    assert "빌드 회의" in result
+async def test_update_event_calls_service() -> None:
+    ctx = _make_ctx(db=None)
+    fake_update = AsyncMock(return_value={"id": "evt1", "title": "변경된 제목", "start": "2026-06-06T11:00:00+09:00", "end": "2026-06-06T12:00:00+09:00", "all_day": False})
+    with patch("app.services.google_calendar.update_event", fake_update):
+        result = await update_event(ctx, "evt1", title="변경된 제목")
+    assert "수정했어" in result
+    fake_update.assert_awaited_once_with("evt1", title="변경된 제목", start=None, end=None)
+
+
+async def test_cancel_event_calls_service() -> None:
+    ctx = _make_ctx(db=None)
+    fake_delete = AsyncMock(return_value=None)
+    with patch("app.services.google_calendar.delete_event", fake_delete):
+        result = await cancel_event(ctx, "evt1")
+    assert "취소했어" in result
+    fake_delete.assert_awaited_once_with("evt1")
+
+
+async def test_cancel_event_reports_failure() -> None:
+    ctx = _make_ctx(db=None)
+    fake_delete = AsyncMock(side_effect=GoogleCalendarError("실패"))
+    with patch("app.services.google_calendar.delete_event", fake_delete):
+        result = await cancel_event(ctx, "evt1")
+    assert "실패" in result
 
 
 async def test_complete_todo_with_db() -> None:

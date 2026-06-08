@@ -66,7 +66,8 @@ async def _morning_brief() -> None:
         from sqlalchemy import select
 
         from app.core.database import AsyncSessionLocal
-        from app.models.agenda import ScheduledEvent, Todo
+        from app.models.agenda import Todo
+        from app.services import google_calendar
         from app.services.weather import get_current_weather
 
         # Gather real weather
@@ -81,28 +82,23 @@ async def _morning_brief() -> None:
                 f"미세먼지 PM2.5 {weather['pm25']} ({weather['aqi_grade']})"
             )
 
-        # Gather today's events and uncompleted todos from DB
+        # Gather today's events from Google Calendar and uncompleted todos from DB
         today = date.today()
         events_text = ""
         todos_text = ""
 
+        day_start = datetime(today.year, today.month, today.day, 0, 0, 0).isoformat() + "+09:00"
+        day_end = datetime(today.year, today.month, today.day, 23, 59, 59).isoformat() + "+09:00"
+        events = await google_calendar.list_events(day_start, day_end)
+        if events:
+            event_lines = [
+                f"{'종일' if e['all_day'] else e['start'][11:16]} {e['title']}" for e in events
+            ]
+            events_text = "오늘 일정:\n" + "\n".join(f"- {line}" for line in event_lines)
+        else:
+            events_text = "오늘 일정 없음"
+
         async with AsyncSessionLocal() as db:
-            day_start = datetime(today.year, today.month, today.day, tzinfo=UTC)
-            day_end = datetime(today.year, today.month, today.day, 23, 59, 59, tzinfo=UTC)
-
-            ev_result = await db.execute(
-                select(ScheduledEvent)
-                .where(ScheduledEvent.scheduled_at >= day_start)
-                .where(ScheduledEvent.scheduled_at <= day_end)
-                .order_by(ScheduledEvent.scheduled_at)
-            )
-            events = ev_result.scalars().all()
-            if events:
-                event_lines = [f"{e.scheduled_at.strftime('%H:%M')} {e.title} [{e.tag}]" for e in events]
-                events_text = "오늘 일정:\n" + "\n".join(f"- {line}" for line in event_lines)
-            else:
-                events_text = "오늘 일정 없음"
-
             todo_result = await db.execute(
                 select(Todo).where(Todo.done.is_(False)).order_by(Todo.created_at)
             )

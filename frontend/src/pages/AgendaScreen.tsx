@@ -5,27 +5,18 @@ import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
 import { TodayCard } from '@/components/widgets/productivity';
-import type { ScheduleTag } from '@/types/quark';
 
-const TAG_COLOR: Record<ScheduleTag, string> = {
-  회의: 'var(--acc-bright)',
-  마감: 'var(--bad)',
-  작업: 'var(--warn)',
-  개인: 'var(--plant)',
-};
 const DOW = ['월', '화', '수', '목', '금', '토', '일'];
 
-// ── API types ────────────────────────────────────────────────────────────────
+// ── API types (Google Calendar 프록시 — /api/agenda/events) ──────────────────
 
 interface ApiEvent {
-  id: number;
+  id: string;
   title: string;
   scheduled_at: string;
-  tag: string;
-  done: boolean;
-  created_at: string;
+  end_at: string | null;
+  all_day: boolean;
 }
-
 
 interface ApiIdea {
   id: number;
@@ -36,10 +27,13 @@ interface ApiIdea {
 
 // ── Calendar views ────────────────────────────────────────────────────────────
 
-/** UTC 시각 문자열 반환 (에이전트가 UTC naive로 저장하므로 UTC 기준 표시) */
-function utcTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+/** Google Calendar가 'YYYY-MM-DDTHH:MM:SS+09:00' 형식으로 내려주므로 문자열에서 바로 시각 추출 */
+function eventTime(ev: ApiEvent): string {
+  return ev.all_day ? '종일' : ev.scheduled_at.slice(11, 16);
+}
+
+function eventColor(ev: ApiEvent): string {
+  return ev.all_day ? 'var(--plant)' : 'var(--acc-bright)';
 }
 
 function DayView({ dateStr }: { dateStr: string }) {
@@ -63,12 +57,11 @@ function DayView({ dateStr }: { dateStr: string }) {
           </div>
         ))}
         {events.map((ev) => {
-          const d = new Date(ev.scheduled_at);
-          const h = d.getUTCHours();
-          const m = d.getUTCMinutes();
-          const t = utcTime(ev.scheduled_at);
-          const tag = ev.tag as ScheduleTag;
-          const color = TAG_COLOR[tag] ?? 'var(--tx-mid)';
+          if (ev.all_day) return null;
+          const h = Number(ev.scheduled_at.slice(11, 13));
+          const m = Number(ev.scheduled_at.slice(14, 16));
+          const t = eventTime(ev);
+          const color = eventColor(ev);
           const yPct = toY(h, m);
           if (yPct < -5 || yPct > 105) return null;
           return (
@@ -115,9 +108,7 @@ function WeekView() {
         const d = new Date(base);
         d.setDate(base.getDate() + i);
         const dayStr = d.toISOString().slice(0, 10);
-        const dayEvents = events.filter(
-          (ev) => new Date(ev.scheduled_at).toISOString().slice(0, 10) === dayStr,
-        );
+        const dayEvents = events.filter((ev) => ev.scheduled_at.slice(0, 10) === dayStr);
         return (
           <div key={i} className={'week-col' + (i === today ? ' today' : '')}>
             <div className="week-head">
@@ -126,9 +117,8 @@ function WeekView() {
             </div>
             <div className="week-evts">
               {dayEvents.map((ev) => {
-                const t = utcTime(ev.scheduled_at);
-                const tag = ev.tag as ScheduleTag;
-                const color = TAG_COLOR[tag] ?? 'var(--tx-mid)';
+                const t = eventTime(ev);
+                const color = eventColor(ev);
                 return (
                   <div key={ev.id} className="week-chip" style={{ borderLeftColor: color }}>
                     <span className="mono" style={{ fontSize: 10, color }}>{t}</span>
@@ -150,14 +140,23 @@ function MonthView() {
   const m = now.getMonth();
   const first = (new Date(y, m, 1).getDay() + 6) % 7;
   const days = new Date(y, m + 1, 0).getDate();
-  const marks: Record<number, ScheduleTag[]> = {
-    9: ['회의'],
-    12: ['작업', '마감'],
-    15: ['작업'],
-    18: ['회의'],
-    22: ['개인'],
-    26: ['작업'],
-  };
+  const dateFrom = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const dateTo = `${y}-${String(m + 1).padStart(2, '0')}-${String(days).padStart(2, '0')}`;
+
+  const { data: events = [] } = useQuery<ApiEvent[]>({
+    queryKey: ['events-month', dateFrom],
+    queryFn: () =>
+      axios
+        .get<ApiEvent[]>(`/api/agenda/events?date_from=${dateFrom}&date_to=${dateTo}`)
+        .then((r) => r.data),
+  });
+
+  const marks: Record<number, ApiEvent[]> = {};
+  for (const ev of events) {
+    const day = Number(ev.scheduled_at.slice(8, 10));
+    (marks[day] ??= []).push(ev);
+  }
+
   const cells: (number | null)[] = [];
   for (let i = 0; i < first; i++) cells.push(null);
   for (let d = 1; d <= days; d++) cells.push(d);
@@ -178,8 +177,8 @@ function MonthView() {
               <>
                 <span className="mono md-num">{d}</span>
                 <span className="md-dots">
-                  {(marks[d] || []).map((t, j) => (
-                    <i key={j} style={{ background: TAG_COLOR[t] }} />
+                  {(marks[d] || []).slice(0, 4).map((ev, j) => (
+                    <i key={j} style={{ background: eventColor(ev) }} />
                   ))}
                 </span>
               </>

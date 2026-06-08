@@ -4,14 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { CardHead } from '@/components/common';
 import { Icon } from '@/components/Icon';
-import type { ScheduleTag } from '@/types/quark';
 
 interface ApiEvent {
-  id: number;
+  id: string;
   title: string;
   scheduled_at: string;
-  tag: string;
-  done: boolean;
+  end_at: string | null;
+  all_day: boolean;
 }
 
 interface ApiTodo {
@@ -26,13 +25,6 @@ interface ApiHabit {
   streak: number;
   done_today: boolean;
 }
-
-const TAG_COLOR: Record<ScheduleTag, string> = {
-  회의: 'var(--acc-bright)',
-  마감: 'var(--bad)',
-  작업: 'var(--warn)',
-  개인: 'var(--tx-mid)',
-};
 
 /* ============ 오늘 일정 ============ */
 export function ScheduleCard() {
@@ -53,11 +45,10 @@ export function ScheduleCard() {
           <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>일정 없음</span>
         )}
         {events.map((ev) => {
+          const t = ev.all_day ? '종일' : ev.scheduled_at.slice(11, 16);
+          const color = ev.all_day ? 'var(--plant)' : 'var(--acc-bright)';
           const d = new Date(ev.scheduled_at);
-          const t = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
-          const tag = ev.tag as ScheduleTag;
-          const color = TAG_COLOR[tag] ?? 'var(--tx-faint)';
-          const soon = d.getTime() - now.getTime() < 30 * 60 * 1000 && d.getTime() > now.getTime();
+          const soon = !ev.all_day && d.getTime() - now.getTime() < 30 * 60 * 1000 && d.getTime() > now.getTime();
           return (
             <div key={ev.id} className="sched-row">
               <span
@@ -87,7 +78,6 @@ export function ScheduleCard() {
                 {ev.title}
               </span>
               {soon && <span className="soon-tag">곧</span>}
-              <span style={{ fontSize: 10.5, color: 'var(--tx-low)', flex: 'none' }}>{ev.tag}</span>
             </div>
           );
         })}

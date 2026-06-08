@@ -1,12 +1,12 @@
 """Personal-assistant function tools for the QUARK agent.
 
-These tools access the database (scheduled_events, todos, ideas) and perform
-web searches. They require ctx.deps.db to be non-None for DB operations.
+일정(events)은 Google Calendar를 단일 소스로 사용하고, todos/ideas/habits 등은
+DB에 저장한다 (DB 작업은 ctx.deps.db가 None이 아니어야 함). 그 외 웹 검색 등도 포함.
 """
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from duckduckgo_search import DDGS
@@ -25,66 +25,90 @@ async def add_event(
     ctx: RunContext[QuarkDeps],
     title: str,
     scheduled_at: str,
-    tag: str = "개인",
+    end_at: str | None = None,
 ) -> str:
-    """일정을 DB에 저장한다.
+    """Google 캘린더에 일정을 추가한다 (아이폰 캘린더 앱과 자동 동기화됨).
 
     Args:
         title: 일정 제목.
-        scheduled_at: ISO 8601 형식 날짜시간 (예: 2026-06-10T14:00:00).
-        tag: 태그 — 회의 | 마감 | 작업 | 개인.
+        scheduled_at: 시작 시각, ISO 8601 (예: 2026-06-10T14:00:00). 타임존 생략 시 한국 시간(Asia/Seoul)으로 처리.
+        end_at: 종료 시각, ISO 8601. 생략 시 시작 시각 + 1시간.
     """
-    if ctx.deps.db is None:
-        return "일정 저장 불가 (DB 연결 없음)"
-    from app.models.agenda import ScheduledEvent
+    from app.services import google_calendar
 
     try:
-        dt = datetime.fromisoformat(scheduled_at)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        ev = ScheduledEvent(title=title, scheduled_at=dt, tag=tag)
-        ctx.deps.db.add(ev)
-        await ctx.deps.db.flush()
-        await ctx.deps.db.commit()
-        return f"일정 저장했어: {title} ({scheduled_at})"
-    except ValueError as exc:
-        return f"날짜 형식 오류: {exc}"
+        ev = await google_calendar.create_event(title, scheduled_at, end_at)
+    except (ValueError, google_calendar.GoogleCalendarError) as exc:
+        return f"일정 저장 실패: {exc}"
+    return f"일정 저장했어: {ev['title']} ({ev['start']})"
 
 
 async def list_events(
     ctx: RunContext[QuarkDeps],
     target_date: str | None = None,
 ) -> str:
-    """일정 목록을 반환한다.
+    """Google 캘린더에서 일정 목록을 조회한다 (응답에 포함된 [id]는 수정/취소 시 그대로 사용).
 
     Args:
         target_date: 조회할 날짜 (YYYY-MM-DD). 생략 시 오늘.
     """
-    if ctx.deps.db is None:
-        return "일정 조회 불가 (DB 연결 없음)"
-    from app.models.agenda import ScheduledEvent
+    from app.services import google_calendar
 
     try:
-        if target_date:
-            d = date.fromisoformat(target_date)
-        else:
-            d = date.today()
-
-        day_start = datetime(d.year, d.month, d.day, tzinfo=UTC)
-        day_end = datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=UTC)
-        result = await ctx.deps.db.execute(
-            select(ScheduledEvent)
-            .where(ScheduledEvent.scheduled_at >= day_start)
-            .where(ScheduledEvent.scheduled_at <= day_end)
-            .order_by(ScheduledEvent.scheduled_at)
-        )
-        events = result.scalars().all()
-        if not events:
-            return f"{d.isoformat()} 일정 없음"
-        lines = [f"- {e.scheduled_at.strftime('%H:%M')} {e.title} [{e.tag}]" for e in events]
-        return f"{d.isoformat()} 일정:\n" + "\n".join(lines)
+        d = date.fromisoformat(target_date) if target_date else date.today()
     except ValueError as exc:
         return f"날짜 형식 오류: {exc}"
+
+    day_start = datetime(d.year, d.month, d.day, 0, 0, 0).isoformat() + "+09:00"
+    day_end = datetime(d.year, d.month, d.day, 23, 59, 59).isoformat() + "+09:00"
+    events = await google_calendar.list_events(day_start, day_end)
+    if not events:
+        return f"{d.isoformat()} 일정 없음"
+
+    lines = []
+    for e in events:
+        when = "종일" if e["all_day"] else (e["start"][11:16] if len(e["start"]) >= 16 else e["start"])
+        lines.append(f"- [{e['id']}] {when} {e['title']}")
+    return f"{d.isoformat()} 일정:\n" + "\n".join(lines)
+
+
+async def update_event(
+    ctx: RunContext[QuarkDeps],
+    event_id: str,
+    title: str | None = None,
+    scheduled_at: str | None = None,
+    end_at: str | None = None,
+) -> str:
+    """기존 일정을 수정한다. event_id는 list_events 응답의 [id]를 그대로 사용.
+
+    Args:
+        event_id: 수정할 일정의 ID (list_events 결과의 대괄호 안 값).
+        title: 새 제목 (생략 시 변경 안 함).
+        scheduled_at: 새 시작 시각, ISO 8601 (생략 시 변경 안 함).
+        end_at: 새 종료 시각, ISO 8601 (생략 시 변경 안 함).
+    """
+    from app.services import google_calendar
+
+    try:
+        ev = await google_calendar.update_event(event_id, title=title, start=scheduled_at, end=end_at)
+    except (ValueError, google_calendar.GoogleCalendarError) as exc:
+        return f"일정 수정 실패: {exc}"
+    return f"일정 수정했어: {ev['title']} ({ev['start']})"
+
+
+async def cancel_event(ctx: RunContext[QuarkDeps], event_id: str) -> str:
+    """일정을 취소(삭제)한다. event_id는 list_events 응답의 [id]를 그대로 사용.
+
+    Args:
+        event_id: 취소할 일정의 ID (list_events 결과의 대괄호 안 값).
+    """
+    from app.services import google_calendar
+
+    try:
+        await google_calendar.delete_event(event_id)
+    except google_calendar.GoogleCalendarError as exc:
+        return f"일정 취소 실패: {exc}"
+    return "일정 취소했어"
 
 
 async def add_todo(ctx: RunContext[QuarkDeps], text: str) -> str:
@@ -269,6 +293,8 @@ async def log_caffeine(
 ASSISTANT_TOOLS = (
     add_event,
     list_events,
+    update_event,
+    cancel_event,
     add_todo,
     complete_todo,
     add_idea,

@@ -105,6 +105,21 @@ class Settings(BaseSettings):
     def siri_api_key(self) -> str:
         return _read_secret("siri_api_key") or os.environ.get("SIRI_API_KEY", "")
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def google_oauth_client_id(self) -> str:
+        return _read_secret("google_oauth_client_id") or ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def google_oauth_client_secret(self) -> str:
+        return _read_secret("google_oauth_client_secret") or ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def google_calendar_refresh_token(self) -> str:
+        return _read_secret("google_calendar_refresh_token") or ""
+
     # ── Derived DSNs ────────────────────────────────────────────────────────
     @computed_field  # type: ignore[prop-decorator]
     @property

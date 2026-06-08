@@ -8,19 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class ScheduledEvent(Base):
-    __tablename__ = "scheduled_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(Text)
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    tag: Mapped[str] = mapped_column(Text, default="개인")
-    done: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
 class Todo(Base):
     __tablename__ = "todos"
 

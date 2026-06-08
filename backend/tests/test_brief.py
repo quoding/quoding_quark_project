@@ -92,6 +92,9 @@ async def test_morning_brief_generates_and_sends() -> None:
         patch("app.services.weather.get_current_weather", return_value={
             "temp": 25, "label": "맑음", "hi": 28, "lo": 20, "pm25": 10, "aqi_grade": "좋음",
         }),
+        patch("app.services.google_calendar.list_events", AsyncMock(return_value=[
+            {"id": "evt1", "title": "회의", "start": "2026-06-08T10:00:00+09:00", "end": "2026-06-08T11:00:00+09:00", "all_day": False},
+        ])),
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeSessionCtx()),
         patch("app.agents.quark_agent.quark_agent") as mock_agent,
         patch("app.services.scheduler._send_discord_message", mock_send),

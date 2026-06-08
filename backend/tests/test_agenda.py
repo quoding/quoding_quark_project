@@ -4,11 +4,13 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
 from app.core.database import get_db
 from app.main import app
+from app.services.google_calendar import GoogleCalendarError
 
 # ── DB stub helpers ───────────────────────────────────────────────────────────
 
@@ -59,63 +61,76 @@ def _override(session: _FakeSession) -> Any:
     return _fake_db
 
 
-# ── /api/agenda/events ────────────────────────────────────────────────────────
+# ── /api/agenda/events (Google Calendar 프록시 — google_calendar 서비스 모킹) ──────
 
 
 async def test_list_events_empty() -> None:
-    app.dependency_overrides[get_db] = _override(_FakeSession([]))
-    try:
+    with patch("app.services.google_calendar.list_events", AsyncMock(return_value=[])):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.get("/api/agenda/events")
-        assert resp.status_code == 200
-        assert resp.json() == []
-    finally:
-        app.dependency_overrides.clear()
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_list_events_returns_normalized_events() -> None:
+    fake_list = AsyncMock(return_value=[
+        {"id": "evt1", "title": "회의", "start": "2026-06-10T14:00:00+09:00", "end": "2026-06-10T15:00:00+09:00", "all_day": False},
+    ])
+    with patch("app.services.google_calendar.list_events", fake_list):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/agenda/events?date_filter=2026-06-10")
+    assert resp.status_code == 200
+    assert resp.json() == [
+        {"id": "evt1", "title": "회의", "scheduled_at": "2026-06-10T14:00:00+09:00", "end_at": "2026-06-10T15:00:00+09:00", "all_day": False},
+    ]
 
 
 async def test_create_event() -> None:
-    from app.models.agenda import ScheduledEvent
-
-    ev = ScheduledEvent(
-        id=1,
-        title="회의",
-        scheduled_at=datetime(2026, 6, 10, 14, 0, tzinfo=UTC),
-        tag="회의",
-        done=False,
-        created_at=datetime(2026, 6, 6, 8, 0, tzinfo=UTC),
-    )
-    session = _FakeSession([ev])
-    app.dependency_overrides[get_db] = _override(session)
-    try:
+    fake_create = AsyncMock(return_value={"id": "evt1", "title": "회의", "start": "2026-06-10T14:00:00+09:00", "end": "2026-06-10T15:00:00+09:00", "all_day": False})
+    with patch("app.services.google_calendar.create_event", fake_create):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post(
                 "/api/agenda/events",
-                json={"title": "회의", "scheduled_at": "2026-06-10T14:00:00+00:00", "tag": "회의"},
+                json={"title": "회의", "scheduled_at": "2026-06-10T14:00:00+09:00"},
             )
-        assert resp.status_code == 201
-        assert resp.json()["title"] == "회의"
-    finally:
-        app.dependency_overrides.clear()
+    assert resp.status_code == 201
+    assert resp.json()["title"] == "회의"
+
+
+async def test_create_event_reports_upstream_failure() -> None:
+    fake_create = AsyncMock(side_effect=GoogleCalendarError("연동 설정 없음"))
+    with patch("app.services.google_calendar.create_event", fake_create):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/api/agenda/events",
+                json={"title": "회의", "scheduled_at": "2026-06-10T14:00:00+09:00"},
+            )
+    assert resp.status_code == 502
 
 
 async def test_update_event_not_found() -> None:
-    app.dependency_overrides[get_db] = _override(_FakeSession([]))
-    try:
+    fake_update = AsyncMock(side_effect=GoogleCalendarError("not found"))
+    with patch("app.services.google_calendar.update_event", fake_update):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
-            resp = await c.patch("/api/agenda/events/999", json={"done": True})
-        assert resp.status_code == 404
-    finally:
-        app.dependency_overrides.clear()
+            resp = await c.patch("/api/agenda/events/999", json={"title": "변경"})
+    assert resp.status_code == 404
 
 
 async def test_delete_event_not_found() -> None:
-    app.dependency_overrides[get_db] = _override(_FakeSession([]))
-    try:
+    fake_delete = AsyncMock(side_effect=GoogleCalendarError("not found"))
+    with patch("app.services.google_calendar.delete_event", fake_delete):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.delete("/api/agenda/events/999")
-        assert resp.status_code == 404
-    finally:
-        app.dependency_overrides.clear()
+    assert resp.status_code == 404
+
+
+async def test_delete_event_succeeds() -> None:
+    fake_delete = AsyncMock(return_value=None)
+    with patch("app.services.google_calendar.delete_event", fake_delete):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.delete("/api/agenda/events/evt1")
+    assert resp.status_code == 204
+    fake_delete.assert_awaited_once_with("evt1")
 
 
 # ── /api/todos ────────────────────────────────────────────────────────────────
