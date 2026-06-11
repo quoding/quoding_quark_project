@@ -88,3 +88,4 @@ async def save_daily_summary(db: AsyncSession, summary: dict, day: date | None =
         ),
         {"day": day.isoformat(), "summary": json.dumps(summary)},
     )
+    await db.commit()

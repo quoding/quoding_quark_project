@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+import time
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -151,7 +152,7 @@ async def _sensor_poll() -> None:
     """Every 30s — request sensor data from ESP32 devices via MQTT."""
     from app.services.mqtt_bridge import mqtt_bridge
 
-    await mqtt_bridge.publish("quark/cmd/all/poll", {"ts": __import__("time").time()})
+    await mqtt_bridge.publish("quark/cmd/all/poll", {"ts": time.time()})
 
 
 async def _weekly_review() -> None:
@@ -170,14 +171,10 @@ async def _weekly_review() -> None:
         from app.models.memory import DailyEpisode
 
         today = date.today()
-        # Find start of current week (Monday)
-        week_start = datetime(today.year, today.month, today.day, tzinfo=UTC)
-        week_start = week_start.replace(
-            day=today.day - today.weekday(),
-            hour=0,
-            minute=0,
-            second=0,
-        )
+        # Find start of current week (Monday) — timedelta로 계산해야 월초에
+        # day가 0 이하로 떨어지는 ValueError가 없다.
+        monday = today - timedelta(days=today.weekday())
+        week_start = datetime(monday.year, monday.month, monday.day, tzinfo=UTC)
 
         async with AsyncSessionLocal() as db:
             # Get this week's daily episodes

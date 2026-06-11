@@ -36,7 +36,6 @@ class MqttMessage:
 @dataclass
 class MqttBridge:
     _client: aiomqtt.Client | None = field(default=None, init=False, repr=False)
-    _inbound: asyncio.Queue[MqttMessage] = field(default_factory=asyncio.Queue, init=False)
     _subscribers: dict[str, list[Callable[[MqttMessage], Any]]] = field(
         default_factory=dict, init=False
     )
@@ -88,7 +87,6 @@ class MqttBridge:
                 await asyncio.sleep(5)
 
     async def _dispatch(self, msg: MqttMessage) -> None:
-        await self._inbound.put(msg)
         for pattern, handlers in self._subscribers.items():
             if _topic_matches(pattern, msg.topic):
                 for handler in handlers:

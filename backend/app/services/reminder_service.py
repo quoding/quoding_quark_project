@@ -138,7 +138,7 @@ async def create_reminder(
 async def list_reminders(db: AsyncSession, discord_user_id: str) -> list[Reminder]:
     res = await db.execute(
         select(Reminder)
-        .where(Reminder.discord_user_id == discord_user_id, Reminder.done == False)
+        .where(Reminder.discord_user_id == discord_user_id, Reminder.done.is_(False))
         .order_by(Reminder.fire_at)
     )
     return list(res.scalars().all())
@@ -241,8 +241,8 @@ async def reminder_poll_loop(db_factory: async_sessionmaker[AsyncSession]) -> No
                 res = await db.execute(
                     select(Reminder).where(
                         Reminder.fire_at <= now,
-                        Reminder.fired == False,
-                        Reminder.done == False,
+                        Reminder.fired.is_(False),
+                        Reminder.done.is_(False),
                     )
                 )
                 due = list(res.scalars().all())

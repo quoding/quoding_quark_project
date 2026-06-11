@@ -64,12 +64,17 @@ async def _stream_agent(
     model = build_model(message)
 
     chunks: list[str] = []
-    async with quark_agent.run_stream(
-        prompt, message_history=list(history), deps=deps, model=model
-    ) as result:
-        async for delta in result.stream_text(delta=True):
-            chunks.append(delta)
-            yield _sse({"delta": delta})
+    try:
+        async with quark_agent.run_stream(
+            prompt, message_history=list(history), deps=deps, model=model
+        ) as result:
+            async for delta in result.stream_text(delta=True):
+                chunks.append(delta)
+                yield _sse({"delta": delta})
+    except Exception:
+        logger.exception("Agent stream failed for session %s", session_id)
+        yield _sse({"error": "응답 생성에 실패했어. 잠시 후 다시 시도해줘.", "done": True})
+        return
 
     await redis_append_conversation(redis, session_id, "assistant", "".join(chunks))
     yield _sse({"done": True})

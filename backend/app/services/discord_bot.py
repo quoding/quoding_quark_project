@@ -110,33 +110,43 @@ class QuarkBot(commands.Bot):
             history = to_message_history(turns)
             await redis_append_conversation(redis, session_id, "user", content)
 
-        context_note = ""
+        # 세션은 에이전트 실행이 끝날 때까지 살아 있어야 한다 — 닫힌 세션을
+        # deps.db로 넘기면 add_todo 같은 DB 도구 호출이 전부 실패한다.
         if self._db_factory is not None:
-            try:
-                async with self._db_factory() as db_session:
-                    db = db_session
+            db = self._db_factory()
+
+        try:
+            context_note = ""
+            if db is not None:
+                try:
                     from app.services.rag import retrieve
-                    memories = await retrieve(content, db_session, k=3)
+                    memories = await retrieve(content, db, k=3)
                     if memories:
                         lines = "\n".join(f"- {m['content']}" for m in memories)
                         context_note = f"\n\n[관련 기억]\n{lines}"
+                except Exception:
+                    logger.warning("Discord RAG retrieve failed", exc_info=True)
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+
+            prompt = content + context_note
+            model = build_model(content)
+            deps = QuarkDeps(mqtt=mqtt_bridge, redis=redis, db=db)
+
+            try:
+                async with message.channel.typing():
+                    result = await quark_agent.run(
+                        prompt, message_history=history, deps=deps, model=model
+                    )
             except Exception:
-                logger.warning("Discord RAG retrieve failed", exc_info=True)
-                db = None
-
-        prompt = content + context_note
-        model = build_model(content)
-        deps = QuarkDeps(mqtt=mqtt_bridge, redis=redis, db=db)
-
-        try:
-            async with message.channel.typing():
-                result = await quark_agent.run(
-                    prompt, message_history=history, deps=deps, model=model
-                )
-        except Exception:
-            logger.exception("Agent run failed for Discord message in %s", session_id)
-            await message.channel.send("미안, 지금 응답 처리에 문제가 생겼어. 잠깐 뒤에 다시 해줄래?")
-            return
+                logger.exception("Agent run failed for Discord message in %s", session_id)
+                await message.channel.send("미안, 지금 응답 처리에 문제가 생겼어. 잠깐 뒤에 다시 해줄래?")
+                return
+        finally:
+            if db is not None:
+                await db.close()
 
         reply = result.output
         if redis is not None:

@@ -21,6 +21,8 @@ from app.services.memory import pgvector_search, redis_get_conversation, save_da
 
 logger = logging.getLogger(__name__)
 
+_MIN_SIMILARITY = 0.35  # cosine similarity — 이보다 낮으면 무관한 기억으로 취급
+
 
 async def save_memory(content: str, meta: dict[str, Any], db: AsyncSession) -> None:
     """Embed *content* and persist an ``AgentMemory`` row. No-op when embedding is toggled off."""
@@ -38,7 +40,9 @@ async def retrieve(query: str, db: AsyncSession, k: int = 5) -> list[dict[str, A
         return []
     embedding = await get_embedding(query)
     results: list[dict[str, Any]] = await pgvector_search(db, embedding, limit=k)
-    return results
+    # 임계값 미달 기억은 버린다 — top-k는 무관한 내용도 항상 반환하므로,
+    # 그대로 주입하면 모든 대화에 노이즈 컨텍스트가 섞인다.
+    return [r for r in results if r.get("similarity", 0.0) >= _MIN_SIMILARITY]
 
 
 async def create_daily_summary(
