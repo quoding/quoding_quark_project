@@ -36,6 +36,9 @@ class MqttMessage:
 @dataclass
 class MqttBridge:
     _client: aiomqtt.Client | None = field(default=None, init=False, repr=False)
+    # topic → 마지막 payload. 에이전트의 get_home_state가 읽는 실시간 상태 캐시.
+    # cmd 토픽도 보관한다 — 기기가 상태를 echo하지 않는 경우 마지막 명령이 최선의 추정값.
+    _state: dict[str, Any] = field(default_factory=dict, init=False)
     _subscribers: dict[str, list[Callable[[MqttMessage], Any]]] = field(
         default_factory=dict, init=False
     )
@@ -86,7 +89,12 @@ class MqttBridge:
                 self._client = None
                 await asyncio.sleep(5)
 
+    def state_snapshot(self) -> dict[str, Any]:
+        """수신한 토픽별 마지막 payload 스냅샷 (사본)."""
+        return dict(self._state)
+
     async def _dispatch(self, msg: MqttMessage) -> None:
+        self._state[msg.topic] = msg.payload
         for pattern, handlers in self._subscribers.items():
             if _topic_matches(pattern, msg.topic):
                 for handler in handlers:

@@ -125,12 +125,20 @@ async def wake_laptop(ctx: RunContext[QuarkDeps]) -> str:
 
 
 async def get_home_state(ctx: RunContext[QuarkDeps]) -> dict[str, Any]:
-    """현재 집 상태 스냅샷을 읽는다 (제어 명령은 보내지 않음)."""
-    return {
-        "lights": list(LIGHT_ROOMS),
-        "scenes": list(SCENES),
-        "note": "live state는 quark/sensor/# 구독으로 채워진다.",
-    }
+    """현재 집 상태 스냅샷을 읽는다 (제어 명령은 보내지 않음).
+
+    MQTT로 수신된 토픽별 마지막 값을 반환한다. sensor/* 는 실측값,
+    cmd/* 는 마지막으로 보낸 명령(기기가 echo하지 않을 때의 추정값)이다.
+    """
+    snapshot_fn = getattr(ctx.deps.mqtt, "state_snapshot", None)
+    state: dict[str, Any] = snapshot_fn() if callable(snapshot_fn) else {}
+    if not state:
+        return {
+            "lights": list(LIGHT_ROOMS),
+            "scenes": list(SCENES),
+            "note": "아직 수신된 상태 없음 — 기기가 보고하면 quark/# 토픽별 마지막 값이 채워진다.",
+        }
+    return {"state": state, "lights": list(LIGHT_ROOMS), "scenes": list(SCENES)}
 
 
 HOME_TOOLS = (

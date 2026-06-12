@@ -42,6 +42,12 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     scheduler.add_job(
+        _daily_summary,
+        trigger=CronTrigger(hour=23, minute=30),
+        id="daily-summary",
+        replace_existing=True,
+    )
+    scheduler.add_job(
         _habit_daily_reset,
         trigger=CronTrigger(hour=0, minute=1),
         id="habit-daily-reset",
@@ -222,6 +228,30 @@ async def _weekly_review() -> None:
         return
 
     await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
+
+
+async def _daily_summary() -> None:
+    """매일 23:30 KST — 오늘의 모든 세션 대화를 요약해 daily_episodes에 저장.
+
+    주간 리뷰와 아침 브리핑이 이 에피소드를 읽는다.
+    """
+    logger.info("Running daily summary")
+    try:
+        import redis.asyncio as aioredis
+
+        from app.core.database import AsyncSessionLocal
+        from app.core.redis import get_pool
+        from app.services.rag import create_daily_summary_all
+
+        redis = aioredis.Redis(connection_pool=get_pool())
+        try:
+            async with AsyncSessionLocal() as db:
+                saved = await create_daily_summary_all(redis, db)
+            logger.info("Daily summary %s", "saved" if saved else "skipped (no conversations)")
+        finally:
+            await redis.aclose()
+    except Exception:
+        logger.warning("Daily summary failed", exc_info=True)
 
 
 async def _habit_daily_reset() -> None:

@@ -80,12 +80,14 @@ async def pgvector_search(
 # ── Episodic: daily JSON summaries ───────────────────────────────────────────
 
 async def save_daily_summary(db: AsyncSession, summary: dict, day: date | None = None) -> None:
+    # 모델은 daily_episodes(date, summary JSONB) — 과거 daily_summaries(day, ...)는
+    # 마이그레이션에 존재한 적이 없는 테이블이라 저장이 전부 실패하고 있었다.
     day = day or date.today()
     await db.execute(
         text(
-            "INSERT INTO daily_summaries (day, summary) VALUES (:day, :summary) "
-            "ON CONFLICT (day) DO UPDATE SET summary = :summary"
+            "INSERT INTO daily_episodes (date, summary) VALUES (:day, CAST(:summary AS jsonb)) "
+            "ON CONFLICT (date) DO UPDATE SET summary = CAST(:summary AS jsonb)"
         ),
-        {"day": day.isoformat(), "summary": json.dumps(summary)},
+        {"day": day, "summary": json.dumps(summary)},
     )
     await db.commit()

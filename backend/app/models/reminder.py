@@ -31,6 +31,8 @@ class Reminder(Base):
     fired: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     done: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     snooze_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # 발송 후 일정 시간 반응(완료/스누즈)이 없어 DM으로 재알림했는지 여부
+    escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     created_at: Mapped[_dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

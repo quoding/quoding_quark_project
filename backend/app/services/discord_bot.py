@@ -193,6 +193,27 @@ class QuarkBot(commands.Bot):
                     "Cannot DM user %s for reminder %d", reminder.discord_user_id, reminder.id
                 )
 
+    async def send_reminder_escalation(self, reminder: Reminder) -> None:
+        """발송 후 일정 시간 반응이 없는 알림을 DM으로 재알림 (에스컬레이션)."""
+        from app.discord.cogs.reminder import ReminderView
+
+        embed = discord.Embed(
+            title="⏰ 알림 (재알림)",
+            description=reminder.content,
+            color=discord.Color.orange(),
+        )
+        embed.set_footer(text="아직 완료/스누즈 반응이 없어서 DM으로 다시 알려줬어")
+        try:
+            user = await self.fetch_user(int(reminder.discord_user_id))
+            await user.send(embed=embed, view=ReminderView(reminder_id=reminder.id))
+            logger.info("Escalated reminder %d to DM", reminder.id)
+        except discord.Forbidden:
+            logger.warning(
+                "Cannot DM user %s for escalation of reminder %d",
+                reminder.discord_user_id,
+                reminder.id,
+            )
+
 
 def main() -> None:
     token = settings.discord_token

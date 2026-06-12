@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from app.services.mqtt_bridge import MqttMessage, mqtt_bridge
 
 logger = logging.getLogger(__name__)
+
+_ALERT_COOLDOWN = 6 * 3600.0  # 같은 토픽 알림 최소 간격 (초)
 
 
 @dataclass
@@ -40,11 +43,23 @@ class RuleRouter:
     def load_defaults(self) -> None:
         """Register built-in rules."""
 
-        # Example: low moisture → log warning
+        # Low moisture → Discord 알림 (토픽별 쿨다운으로 센서 주기 발행 스팸 방지)
+        last_alert: dict[str, float] = {}
+
         async def _low_moisture_alert(msg: MqttMessage) -> None:
             val = msg.payload.get("value", 100) if isinstance(msg.payload, dict) else 100
-            if val < 30:
-                logger.warning("Low moisture on %s: %s%%", msg.topic, val)
+            logger.warning("Low moisture on %s: %s%%", msg.topic, val)
+
+            now = time.monotonic()
+            if now - last_alert.get(msg.topic, -_ALERT_COOLDOWN) < _ALERT_COOLDOWN:
+                return
+            last_alert[msg.topic] = now
+
+            from app.services.notify import send_discord_message
+
+            parts = msg.topic.split("/")
+            device = parts[2] if len(parts) > 2 else msg.topic
+            await send_discord_message(f"🌱 {device} 토양 수분이 {val}%야 — 물 줄 때 됐어!")
 
         self.register(
             Rule(

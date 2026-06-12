@@ -170,6 +170,7 @@ async def snooze_reminder(
     new_fire_at = datetime.now(timezone.utc) + timedelta(minutes=snooze_minutes)
     r.fire_at = new_fire_at
     r.fired = False
+    r.escalated = False  # 스누즈 후 재발송분도 무반응이면 다시 에스컬레이션 대상
     r.snooze_count += 1
     await db.commit()
     await db.refresh(r)
@@ -231,8 +232,25 @@ async def _fire_reminder(db_factory: async_sessionmaker[AsyncSession], reminder:
         logger.exception("Failed to send reminder %d via Discord", reminder.id)
 
 
+async def _escalate_reminder(
+    db_factory: async_sessionmaker[AsyncSession], reminder: Reminder
+) -> None:
+    """발송 후 반응 없는 알림을 DM으로 재알림."""
+    if _bot is None:
+        return
+    async with db_factory() as db:
+        await db.execute(
+            update(Reminder).where(Reminder.id == reminder.id).values(escalated=True)
+        )
+        await db.commit()
+    try:
+        await _bot.send_reminder_escalation(reminder)
+    except Exception:
+        logger.exception("Failed to escalate reminder %d", reminder.id)
+
+
 async def reminder_poll_loop(db_factory: async_sessionmaker[AsyncSession]) -> None:
-    """10초마다 due 알림 확인 후 발송."""
+    """10초마다 due 알림 확인 후 발송 + 무반응 알림 DM 에스컬레이션."""
     logger.info("Reminder polling loop started")
     while True:
         try:
@@ -247,8 +265,24 @@ async def reminder_poll_loop(db_factory: async_sessionmaker[AsyncSession]) -> No
                 )
                 due = list(res.scalars().all())
 
+                # 일회성 알림이 발송 후 30분간 완료/스누즈 없이 방치되면 DM으로 한 번 더.
+                # (반복 알림은 fire_at이 미래로 이동하므로 cron_expr 없는 것만 대상)
+                esc_cutoff = now - timedelta(minutes=_ESCALATION_MINUTES)
+                esc_res = await db.execute(
+                    select(Reminder).where(
+                        Reminder.fired.is_(True),
+                        Reminder.done.is_(False),
+                        Reminder.escalated.is_(False),
+                        Reminder.cron_expr.is_(None),
+                        Reminder.fire_at <= esc_cutoff,
+                    )
+                )
+                to_escalate = list(esc_res.scalars().all())
+
             for r in due:
                 asyncio.create_task(_fire_reminder(db_factory, r))
+            for r in to_escalate:
+                asyncio.create_task(_escalate_reminder(db_factory, r))
 
         except Exception:
             logger.exception("Reminder poll error")
