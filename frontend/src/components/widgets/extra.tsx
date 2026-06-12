@@ -312,7 +312,20 @@ export function TransitCard() {
     retry: 1,
   });
 
-  const list = transit && transit.length > 0 ? transit : QDATA.transit;
+  // 구미시 실시간 도착 API가 노후화로 사용 불가 — 키 확보 전까지 보류 상태.
+  // 가짜 mock 데이터를 실시간인 척 보여주지 않고 안내 문구를 표시한다.
+  const list = transit && transit.length > 0 ? transit : null;
+
+  if (!list) {
+    return (
+      <div className="card hov" style={{ height: '100%' }}>
+        <CardHead icon="bus" title="대중교통" meta="보류" />
+        <div style={{ fontSize: 12, color: 'var(--tx-mid)', lineHeight: 1.6 }}>
+          실시간 도착 정보 미연동 (구미시 API 보류 중)
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="card hov" style={{ height: '100%' }}>
