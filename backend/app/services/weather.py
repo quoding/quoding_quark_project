@@ -82,6 +82,49 @@ def _wmo_ico(code: int) -> str:
 _forecast_cache: dict[str, Any] = {}
 _FORECAST_TTL = 600.0  # 10 minutes
 
+_city_cache: dict[str, Any] = {}
+
+
+async def _get_city_name() -> str:
+    """좌표 → 지역명 (OpenStreetMap Nominatim reverse geocoding, 키 불필요).
+
+    좌표는 설정값이라 자주 바뀌지 않으므로 프로세스 생애주기 동안 캐시한다.
+    """
+    settings = get_settings()
+    cache_key = f"{settings.weather_lat},{settings.weather_lon}"
+    if _city_cache.get("key") == cache_key:
+        return _city_cache["name"]
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={
+                    "lat": settings.weather_lat,
+                    "lon": settings.weather_lon,
+                    "format": "jsonv2",
+                    "accept-language": "ko",
+                    "zoom": 14,
+                },
+                headers={"User-Agent": "quark-personal-assistant/1.0"},
+            )
+            resp.raise_for_status()
+            address: dict[str, Any] = resp.json().get("address", {})
+
+        name = (
+            address.get("city")
+            or address.get("town")
+            or address.get("county")
+            or address.get("state")
+            or "알 수 없음"
+        )
+        _city_cache["key"] = cache_key
+        _city_cache["name"] = name
+        return name
+    except Exception as exc:
+        logger.warning("Reverse geocoding failed: %s", exc)
+        return "알 수 없음"
+
 
 async def get_forecast() -> dict[str, Any]:
     """Fetch 7-day daily forecast + sunrise/sunset from Open-Meteo."""
@@ -198,6 +241,7 @@ async def get_current_weather() -> dict[str, Any]:
         hi: float = wd["daily"]["temperature_2m_max"][0]
         lo: float = wd["daily"]["temperature_2m_min"][0]
         pm25: float = aqd["current"]["pm2_5"]
+        city = await _get_city_name()
 
         return {
             "temp": round(temp, 1),
@@ -206,6 +250,7 @@ async def get_current_weather() -> dict[str, Any]:
             "lo": round(lo, 1),
             "pm25": round(pm25, 1),
             "aqi_grade": _pm25_grade(pm25),
+            "city": city,
         }
     except Exception as exc:
         logger.warning("Weather fetch failed: %s", exc)

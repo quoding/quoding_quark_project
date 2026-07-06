@@ -96,7 +96,11 @@ def main() -> None:
     print(f"\n[대기 중] localhost:{REDIRECT_PORT} 에서 콜백을 기다립니다 ...")
 
     httpd = HTTPServer(("localhost", REDIRECT_PORT), _CallbackHandler)
-    httpd.handle_request()  # 콜백 1번만 받고 종료
+    httpd.timeout = 120
+    # 브라우저/SSH 터널이 만든 죽은 연결이 먼저 accept될 수 있으므로,
+    # 실제 code가 담긴 콜백을 받을 때까지 반복 수신한다.
+    while _auth_code is None:
+        httpd.handle_request()
 
     if _auth_code is None:
         print("[오류] 인증 코드를 받지 못했습니다.")

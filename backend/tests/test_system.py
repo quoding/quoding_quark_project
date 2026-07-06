@@ -80,12 +80,20 @@ async def test_get_current_weather_success() -> None:
     mock_aqi_resp.raise_for_status = MagicMock()
     mock_aqi_resp.json.return_value = aqi_payload
 
+    mock_geo_resp = MagicMock()
+    mock_geo_resp.raise_for_status = MagicMock()
+    mock_geo_resp.json.return_value = {"address": {"city": "구미시"}}
+
     call_count = 0
 
     async def mock_get(*_: Any, **__: Any) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        return mock_weather_resp if call_count == 1 else mock_aqi_resp
+        if call_count == 1:
+            return mock_weather_resp
+        if call_count == 2:
+            return mock_aqi_resp
+        return mock_geo_resp
 
     class _FakeClient:
         async def __aenter__(self) -> _FakeClient:
@@ -105,6 +113,7 @@ async def test_get_current_weather_success() -> None:
     assert result["lo"] == 16.0
     assert result["pm25"] == 12.0
     assert result["aqi_grade"] == "좋음"
+    assert result["city"] == "구미시"
 
 
 async def test_get_current_weather_failure() -> None:

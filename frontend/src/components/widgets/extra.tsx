@@ -30,6 +30,7 @@ interface WeatherData {
   lo: number;
   pm25: number;
   aqi_grade: string;
+  city?: string;
 }
 
 interface NewsItem {
@@ -111,7 +112,7 @@ export function WeatherCard() {
 
   return (
     <div className="card hov" style={{ height: '100%' }}>
-      <CardHead icon="cloud" title="날씨 예보" meta={QDATA.weather.city} />
+      <CardHead icon="cloud" title="날씨 예보" meta={w.city ?? QDATA.weather.city} />
       <div className="row" style={{ gap: 16, marginBottom: 16, alignItems: 'flex-start' }}>
         <div style={{ color: 'var(--warn)', width: 44, height: 44, display: 'grid', placeItems: 'center', flex: 'none' }}>
           <Icon name="sun" />
