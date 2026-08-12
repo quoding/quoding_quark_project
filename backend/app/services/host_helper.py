@@ -24,7 +24,7 @@ async def reboot_host() -> bool:
     settings = get_settings()
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            resp = await client.post(f"{settings.host_helper_url}/reboot", headers=_headers())
+            resp = await client.post(f"{settings.host_helper_base_url}/reboot", headers=_headers())
             resp.raise_for_status()
             return True
         except httpx.HTTPError as exc:
@@ -38,7 +38,7 @@ async def wake_on_lan(mac: str) -> bool:
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
             resp = await client.post(
-                f"{settings.host_helper_url}/wol", headers=_headers(), json={"mac": mac}
+                f"{settings.host_helper_base_url}/wol", headers=_headers(), json={"mac": mac}
             )
             resp.raise_for_status()
             return True

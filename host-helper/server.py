@@ -18,10 +18,36 @@ import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-BIND_HOST = "172.19.0.1"
 BIND_PORT = 8999
 TOKEN_PATH = Path("/home/muya98/quoding/secrets/host_helper_token")
 TOKEN = TOKEN_PATH.read_text().strip()
+
+
+def _detect_bind_host() -> str:
+    """Look up quark-internal's current gateway IP via the Docker CLI.
+
+    User-defined bridge networks get a fresh subnet whenever they're
+    recreated (e.g. `docker compose down && up`), so the gateway IP isn't
+    stable across the network's lifetime. Resolving it at startup instead of
+    hardcoding it keeps this helper reachable from quark-api regardless.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "docker", "network", "inspect", "quoding_quark-internal",
+                "--format", "{{(index .IPAM.Config 0).Gateway}}",
+            ],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        gateway = result.stdout.strip()
+        if gateway:
+            return gateway
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return "172.18.0.1"
+
+
+BIND_HOST = _detect_bind_host()
 
 
 def send_magic_packet(mac: str) -> None:

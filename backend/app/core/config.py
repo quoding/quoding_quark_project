@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import socket
+import struct
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,6 +15,25 @@ def _read_secret(name: str) -> str:
     path = Path(f"/run/secrets/{name}")
     if path.exists():
         return path.read_text().strip()
+    return ""
+
+
+def _default_gateway() -> str:
+    """Read this container's default-route gateway from /proc/net/route.
+
+    That gateway is always the Docker bridge (quark-internal) this container
+    is attached to, so the host helper — which binds to that same bridge's
+    gateway IP — stays reachable even if the network is recreated with a
+    different subnet.
+    """
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 3 and fields[1] == "00000000":
+                    return socket.inet_ntoa(struct.pack("<L", int(fields[2], 16)))
+    except OSError:
+        pass
     return ""
 
 
@@ -55,7 +76,10 @@ class Settings(BaseSettings):
     weather_lon: float = 126.9780
 
     # Host helper (reboot / Wake-on-LAN — runs outside Docker on the host)
-    host_helper_url: str = "http://172.19.0.1:8999"
+    # Empty = auto-detect via this container's default gateway (the quark-internal
+    # bridge). Set HOST_HELPER_URL to override if the helper ever moves off that bridge.
+    host_helper_url: str = ""
+    host_helper_port: int = 8999
     laptop_mac: str = ""
 
     # ── Secrets (Docker Secrets or env fallback) ────────────────────────────
@@ -99,6 +123,14 @@ class Settings(BaseSettings):
     @property
     def host_helper_token(self) -> str:
         return _read_secret("host_helper_token") or ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def host_helper_base_url(self) -> str:
+        if self.host_helper_url:
+            return self.host_helper_url
+        gateway = _default_gateway() or "172.18.0.1"
+        return f"http://{gateway}:{self.host_helper_port}"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
