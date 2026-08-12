@@ -71,6 +71,20 @@ async def _stream_agent(
             async for delta in result.stream_text(delta=True):
                 chunks.append(delta)
                 yield _sse({"delta": delta})
+            if not chunks:
+                # Some models (e.g. gpt-5.6-luna) emit an empty final text part
+                # right after a tool call, and pydantic-ai's streaming path ends
+                # the run there instead of retrying like .run() does — get_output()
+                # would just return that same empty string. Continue the graph
+                # ourselves: drop the empty trailing response and ask the model to
+                # finish, without a new user prompt so no tool gets called twice.
+                trimmed_history = result.all_messages()[:-1]
+                retry_result = await quark_agent.run(
+                    None, message_history=trimmed_history, deps=deps, model=model
+                )
+                if retry_result.output:
+                    chunks.append(retry_result.output)
+                    yield _sse({"delta": retry_result.output})
     except Exception:
         logger.exception("Agent stream failed for session %s", session_id)
         yield _sse({"error": "응답 생성에 실패했어. 잠시 후 다시 시도해줘.", "done": True})

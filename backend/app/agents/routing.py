@@ -6,7 +6,7 @@ Rules:
 """
 from __future__ import annotations
 
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.core.config import get_settings
@@ -40,11 +40,15 @@ def select_model_id(message: str) -> str:
     return settings.openai_model_default
 
 
-def build_model(message: str) -> OpenAIChatModel:
-    """Return an ``OpenAIChatModel`` sized for *message* complexity.
+def build_model(message: str) -> OpenAIResponsesModel:
+    """Return an ``OpenAIResponsesModel`` sized for *message* complexity.
+
+    Uses the Responses API rather than Chat Completions: models like
+    gpt-5.6-luna reject function-tool calls combined with reasoning_effort
+    on /v1/chat/completions, and quark_agent's tools rely on both.
 
     ``agent.override(model=TestModel())`` always takes priority over this in tests.
     """
     model_id = select_model_id(message)
     provider = OpenAIProvider(api_key=settings.openai_api_key or "sk-no-key-configured")
-    return OpenAIChatModel(model_id, provider=provider)
+    return OpenAIResponsesModel(model_id, provider=provider)

@@ -8,7 +8,7 @@ The real key is only ever read from ``settings.openai_api_key`` (Docker secret).
 from __future__ import annotations
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.agents.deps import QuarkDeps
@@ -39,15 +39,18 @@ SYSTEM_PROMPT = """\
 """
 
 
-def _build_model() -> OpenAIChatModel:
-    """Construct the default chat model from config.
+def _build_model() -> OpenAIResponsesModel:
+    """Construct the default model from config, via the Responses API.
 
-    Uses ``settings.openai_model_default`` (``gpt-5.4-nano``) — never hardcoded.
+    Uses ``settings.openai_model_default`` — never hardcoded. The Responses API
+    (not Chat Completions) is required because this agent always has tools
+    registered, and models like gpt-5.6-luna reject function-tool calls
+    combined with reasoning_effort on /v1/chat/completions.
     A placeholder key keeps construction offline-safe; the live key is used only
     when an actual request is made in production.
     """
     provider = OpenAIProvider(api_key=settings.openai_api_key or "sk-no-key-configured")
-    return OpenAIChatModel(settings.openai_model_default, provider=provider)
+    return OpenAIResponsesModel(settings.openai_model_default, provider=provider)
 
 
 quark_agent: Agent[QuarkDeps, str] = Agent(
