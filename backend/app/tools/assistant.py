@@ -187,6 +187,20 @@ async def web_search(ctx: RunContext[QuarkDeps], query: str) -> str:
         return "검색 결과 없음"
 
 
+async def get_weather(ctx: RunContext[QuarkDeps]) -> str:
+    """현재 날씨·기온·미세먼지를 조회한다 (대시보드 날씨 위젯과 같은 소스)."""
+    from app.services.weather import get_current_weather
+
+    data = await get_current_weather()
+    if "error" in data:
+        return "날씨 조회 실패 — 잠시 후 다시 시도해줘."
+    return (
+        f"{data['city']}: {data['label']}, 현재 {data['temp']}°C "
+        f"(최고 {data['hi']}°C / 최저 {data['lo']}°C), "
+        f"미세먼지 {data['pm25']}㎍/㎥ ({data['aqi_grade']})"
+    )
+
+
 async def add_habit(ctx: RunContext[QuarkDeps], name: str) -> str:
     """반복 습관을 DB에 등록한다.
 
@@ -301,6 +315,7 @@ ASSISTANT_TOOLS = (
     add_habit,
     list_habits,
     web_search,
+    get_weather,
     log_mood,
     log_sleep,
     log_caffeine,
