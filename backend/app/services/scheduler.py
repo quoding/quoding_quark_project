@@ -16,11 +16,27 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
 
+def _parse_hm(hm: str, default: tuple[int, int] = (16, 0)) -> tuple[int, int]:
+    try:
+        h, m = hm.split(":")
+        return int(h), int(m)
+    except (ValueError, AttributeError):
+        logger.warning("Invalid HH:MM setting %r, falling back to %s", hm, default)
+        return default
+
+
 def start_scheduler() -> None:
     scheduler.add_job(
         _morning_brief,
         trigger=CronTrigger(hour=8, minute=0),
         id="morning-brief",
+        replace_existing=True,
+    )
+    cutoff_hour, cutoff_minute = _parse_hm(get_settings().caffeine_cutoff)
+    scheduler.add_job(
+        _caffeine_cutoff_alert,
+        trigger=CronTrigger(hour=cutoff_hour, minute=cutoff_minute),
+        id="caffeine-cutoff-alert",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -269,6 +285,45 @@ async def _habit_daily_reset() -> None:
         logger.info("Habit daily reset complete")
     except Exception:
         logger.warning("Habit daily reset failed", exc_info=True)
+
+
+async def _caffeine_cutoff_alert() -> None:
+    """카페인 컷오프 시각(설정값, 기본 16:00) — 오늘 카페인을 마셨으면 Discord로 알림.
+
+    안 마신 날은 알릴 필요가 없으니 조용히 스킵.
+    """
+    logger.info("Running caffeine cutoff alert")
+    cfg = get_settings()
+    if not cfg.discord_channel_id or not cfg.discord_token:
+        logger.warning("Caffeine cutoff alert skipped: discord not configured")
+        return
+
+    try:
+        from sqlalchemy import func, select
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.agenda import Alert, CaffeineLog
+
+        today = date.today()
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(
+                select(func.sum(CaffeineLog.amount_mg)).where(CaffeineLog.date == today)
+            )
+            total_mg: int = res.scalar_one() or 0
+            if total_mg <= 0:
+                logger.debug("Caffeine cutoff alert skipped: no caffeine logged today")
+                return
+
+            cups = total_mg // 100
+            body = f"오늘 카페인 {cups}잔 마셨어. 컷오프 시간이야 — 이제 디카페인으로 바꾸자."
+            db.add(Alert(title="카페인 컷오프", body=body, urgent=False))
+            await db.commit()
+
+        msg = f"☕ 카페인 컷오프 시간이야 ({cfg.caffeine_cutoff}) — 오늘 {cups}잔 마셨어. 이제 디카페인 권장!"
+        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        logger.info("Caffeine cutoff alert sent")
+    except Exception:
+        logger.warning("Caffeine cutoff alert failed", exc_info=True)
 
 
 async def _commit_reminder() -> None:
