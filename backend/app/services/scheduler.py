@@ -40,6 +40,12 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     scheduler.add_job(
+        _deadline_watch,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="deadline-watch",
+        replace_existing=True,
+    )
+    scheduler.add_job(
         _sensor_poll,
         trigger=IntervalTrigger(seconds=30),
         id="sensor-poll",
@@ -324,6 +330,57 @@ async def _caffeine_cutoff_alert() -> None:
         logger.info("Caffeine cutoff alert sent")
     except Exception:
         logger.warning("Caffeine cutoff alert failed", exc_info=True)
+
+
+async def _deadline_watch() -> None:
+    """Daily 09:00 KST — Discord 경고 for D-Day items due within 3 days.
+
+    D-Day(`DdayItem`)를 마감 소스로 쓴다 — Todo에는 마감일 필드가 없고
+    캘린더 이벤트엔 "마감"을 구분할 방법이 없어서, 실제로 날짜 기반 마감 추적이
+    가능한 건 D-Day뿐이다.
+    """
+    logger.info("Running deadline watch")
+    cfg = get_settings()
+    if not cfg.discord_channel_id or not cfg.discord_token:
+        logger.warning("Deadline watch skipped: discord not configured")
+        return
+
+    try:
+        from sqlalchemy import select
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.agenda import Alert, DdayItem
+
+        today = date.today()
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(select(DdayItem).order_by(DdayItem.target_date))
+            items = res.scalars().all()
+
+            due_soon = [
+                (item, (item.target_date - today).days)
+                for item in items
+                if 0 <= (item.target_date - today).days <= 3
+            ]
+            if not due_soon:
+                logger.debug("Deadline watch: nothing due within 3 days")
+                return
+
+            lines = [f"- {item.label}: D-{days}" for item, days in due_soon]
+            for item, days in due_soon:
+                db.add(
+                    Alert(
+                        title=f"마감 임박: {item.label}",
+                        body=f"D-{days} 남았어.",
+                        urgent=days <= 1,
+                    )
+                )
+            await db.commit()
+
+        msg = "⏰ 3일 내 마감 임박:\n" + "\n".join(lines)
+        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        logger.info("Deadline watch sent (%d item(s))", len(due_soon))
+    except Exception:
+        logger.warning("Deadline watch failed", exc_info=True)
 
 
 async def _commit_reminder() -> None:
