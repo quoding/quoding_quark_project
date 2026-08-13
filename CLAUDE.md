@@ -4,14 +4,14 @@
 > **실제 작업 루트는 `quark/`** — 별도 git 저장소 (origin: `github.com/quoding/quoding_quark_project`).
 > `2.agent_page/`는 그 상위 폴더이며 자체 git 저장소가 아님.
 
-> 📚 초기 기획·구상 문서는 `guide_file/`에 있음 (QUARK_Agent_Conception.md 등). **구상 단계 자료이며 실제 구현과 다를 수 있음** — 기술 선택의 "왜"를 알고 싶을 때만 참고.
+> 📚 앞으로의 소프트웨어 개선·추가 계획은 `guide_file/QUARK_PLAN.md`에 있음 (옛 기획서 여러 개를 통합·정리한 단일 문서). 하드웨어는 당분간 보류 확정.
 
 ## 스택 — 실제 적용된 것 (계획과 달라진 부분 위주)
 
 - **에이전트**: 단일 `quark_agent.py` (Pydantic AI) + 등록형 도구(`tools/assistant.py`, `tools/home.py`).
   ⚠️ 초기 구상의 "에이전트별 분리"(command/conversation/idea/summary)는 **채택되지 않음** — 단일 에이전트 + 도구로 통합됨.
 - **모델 라우팅**: `agents/routing.py`가 메시지 길이·복잡도 키워드로 nano↔mini 자동 선택. 모델 ID는 항상 `settings`에서 가져옴 (하드코딩 금지).
-- **알림/스케줄**: 자체 PostgreSQL polling loop (10초 주기) — `reminder_service.py`. APScheduler는 asyncpg와 비호환 확인 후 폐기.
+- **알림/스케줄**: 고정 크론 job(아침 브리핑·주간 리뷰·커밋 리마인더 등 6개)은 `scheduler.py`의 `AsyncIOScheduler`(APScheduler)로 등록. 단, 동적으로 개별 레코드마다 발화 시각이 바뀌는 리마인더는 APScheduler 잡스토어 모델과 안 맞아서 `reminder_service.py`의 자체 PostgreSQL polling loop(10초 주기)로 별도 처리.
 - **DB**: PostgreSQL + pgvector (`AgentMemory` 테이블, RAG), Alembic 마이그레이션 (`alembic/versions/`).
 - **Discord**: `discord.py` 2.7 `commands.Bot` + Cogs, 슬래시 커맨드, `DynamicItem` 영속 버튼.
 - **MQTT**: asyncio-mqtt + `mqtt_bridge.py`; `rule_router.py`가 정규식으로 LLM 이전 1차 처리.
@@ -54,7 +54,7 @@ cd backend && pytest -q
 
 ## 절대 하지 않는 것
 
-- ❌ **APScheduler** — asyncpg와 비호환 확인됨, 자체 polling loop 사용
+- ❌ **동적 개별 스케줄(리마인더)에 APScheduler 사용** — 레코드별 발화 시각이 바뀌는 건 잡스토어 모델과 안 맞음, 자체 polling loop 사용. 고정 크론 job에는 APScheduler 그대로 사용 중.
 - ❌ **에이전트 다중 분리** — 단일 `quark_agent` + `tools/` 등록 패턴 유지
 - ❌ Celery / Home Assistant / Chroma — 오버엔지니어링·RAM 낭비, pgvector로 충분
 - ❌ 동기 코드 in FastAPI — 모든 IO `async`, DB는 `AsyncSession`
