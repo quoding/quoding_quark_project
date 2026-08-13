@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     weather_lat: float = 37.5665
     weather_lon: float = 126.9780
 
+    # Caffeine tracker preferences (HH:MM, Asia/Seoul)
+    caffeine_cutoff: str = "16:00"
+    bedtime: str = "23:30"
+
     # Host helper (reboot / Wake-on-LAN — runs outside Docker on the host)
     # Empty = auto-detect via this container's default gateway (the quark-internal
     # bridge). Set HOST_HELPER_URL to override if the helper ever moves off that bridge.

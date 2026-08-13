@@ -73,6 +73,9 @@ interface CaffeineData {
   date: string;
   cups_today: number;
   mg_today: number;
+  cutoff: string;
+  bedtime: string;
+  last_cup: string | null;
 }
 
 interface DdayData {
@@ -439,6 +442,10 @@ export function MoodCard() {
 
 // ─── 수면 기록 ────────────────────────────────────────────────────────────────
 
+function fmtLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function SleepCard() {
   const s = QDATA.sleepSeed;
 
@@ -448,10 +455,26 @@ export function SleepCard() {
     retry: 1,
   });
 
+  const { data: sleepWeek } = useQuery<SleepData[]>({
+    queryKey: ['sleep-week'],
+    queryFn: () => axios.get<SleepData[]>('/api/sleep/week').then((r) => r.data),
+    retry: 1,
+  });
+
   const hours = sleepData?.hours ?? s.lastH;
   const lastH = Math.floor(hours);
   const lastM = Math.round((hours - lastH) * 60);
   const max = 9;
+
+  const today0 = new Date();
+  const week = sleepWeek && sleepWeek.length > 0
+    ? Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(today0);
+        d.setDate(today0.getDate() - (6 - i));
+        const entry = sleepWeek.find((e) => e.date === fmtLocalDate(d));
+        return entry ? entry.hours : 0;
+      })
+    : s.week;
 
   return (
     <div className="card hov" style={{ height: '100%' }}>
@@ -467,7 +490,7 @@ export function SleepCard() {
         </span>
       </div>
       <div className="sleep-bars">
-        {s.week.map((h, i) => (
+        {week.map((h, i) => (
           <div key={i} className="sb-col">
             <div className="sb-track">
               <i
@@ -505,13 +528,15 @@ export function CaffeineCard() {
   });
 
   const cupsToday = cafData?.cups_today ?? c.cupsToday;
+  const cutoffStr = cafData?.cutoff ?? c.cutoff;
+  const bedtimeStr = cafData?.bedtime ?? c.bedtime;
 
   const now = new Date();
   const toMin = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
   };
-  const cutoff = toMin(c.cutoff);
+  const cutoff = toMin(cutoffStr);
   const cur = now.getHours() * 60 + now.getMinutes();
   const left = cutoff - cur;
   const past = left <= 0;
@@ -528,11 +553,12 @@ export function CaffeineCard() {
           {txt}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--tx-mid)', marginTop: 4 }}>
-          컷오프 {c.cutoff} · 취침 {c.bedtime} 기준
+          컷오프 {cutoffStr} · 취침 {bedtimeStr} 기준
+          {cafData?.last_cup ? ` · 마지막 ${cafData.last_cup}` : ''}
         </div>
       </div>
       <div className="caf-note" style={{ marginBottom: 10 }}>
-        {past ? '이제 마시면 잠 못 자 — 디카페인 권장 ☕' : '아직 괜찮아. ' + c.cutoff + ' 전까진 OK'}
+        {past ? '이제 마시면 잠 못 자 — 디카페인 권장 ☕' : '아직 괜찮아. ' + cutoffStr + ' 전까진 OK'}
       </div>
       <button className="pill" style={{ width: '100%', justifyContent: 'center' }} onClick={() => addCup.mutate()}>
         <Icon name="plus" /> 커피 +1잔

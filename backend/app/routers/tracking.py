@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import datetime as _dt
 from datetime import date
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.agenda import Alert, CaffeineLog, DdayItem, MoodLog, SleepLog
 
@@ -88,23 +90,62 @@ async def log_sleep(body: SleepIn, db: AsyncSession = Depends(get_db)) -> SleepL
     return entry
 
 
+@router.get("/sleep/week", response_model=list[SleepOut])
+async def get_week_sleep(db: AsyncSession = Depends(get_db)) -> list[SleepLog]:
+    """Last 7 days of sleep logs (most recent entry per day), oldest first."""
+    start = date.today() - _dt.timedelta(days=6)
+    res = await db.execute(
+        select(SleepLog).where(SleepLog.date >= start).order_by(SleepLog.date, SleepLog.id)
+    )
+    by_date: dict[date, SleepLog] = {}
+    for entry in res.scalars().all():
+        by_date[entry.date] = entry  # keep the latest entry per day
+    return [by_date[d] for d in sorted(by_date)]
+
+
 # ─── Caffeine ─────────────────────────────────────────────────────────────────
 
 class CaffeineOut(BaseModel):
     date: date
     cups_today: int
     mg_today: int
+    cutoff: str
+    bedtime: str
+    last_cup: str | None = None
 
 
-@router.get("/caffeine", response_model=CaffeineOut)
-async def get_today_caffeine(db: AsyncSession = Depends(get_db)) -> CaffeineOut:
-    today = date.today()
+async def _caffeine_summary(db: AsyncSession, today: date) -> CaffeineOut:
     res = await db.execute(
         select(func.sum(CaffeineLog.amount_mg)).where(CaffeineLog.date == today)
     )
     total_mg: int = res.scalar_one() or 0
-    cups = total_mg // 100
-    return CaffeineOut(date=today, cups_today=cups, mg_today=total_mg)
+
+    last_res = await db.execute(
+        select(CaffeineLog.created_at)
+        .where(CaffeineLog.date == today)
+        .order_by(CaffeineLog.created_at.desc())
+        .limit(1)
+    )
+    last_created_at = last_res.scalar_one_or_none()
+    last_cup = None
+    if last_created_at is not None:
+        local = last_created_at.astimezone(ZoneInfo("Asia/Seoul"))
+        last_cup = local.strftime("%H:%M")
+
+    cfg = get_settings()
+    return CaffeineOut(
+        date=today,
+        cups_today=total_mg // 100,
+        mg_today=total_mg,
+        cutoff=cfg.caffeine_cutoff,
+        bedtime=cfg.bedtime,
+        last_cup=last_cup,
+    )
+
+
+@router.get("/caffeine", response_model=CaffeineOut)
+async def get_today_caffeine(db: AsyncSession = Depends(get_db)) -> CaffeineOut:
+    return await _caffeine_summary(db, date.today())
 
 
 @router.post("/caffeine", response_model=CaffeineOut, status_code=201)
@@ -114,11 +155,7 @@ async def add_caffeine_cup(db: AsyncSession = Depends(get_db)) -> CaffeineOut:
     db.add(entry)
     await db.flush()
     await db.commit()
-    res = await db.execute(
-        select(func.sum(CaffeineLog.amount_mg)).where(CaffeineLog.date == today)
-    )
-    total_mg: int = res.scalar_one() or 0
-    return CaffeineOut(date=today, cups_today=total_mg // 100, mg_today=total_mg)
+    return await _caffeine_summary(db, today)
 
 
 # ─── D-Day ────────────────────────────────────────────────────────────────────
