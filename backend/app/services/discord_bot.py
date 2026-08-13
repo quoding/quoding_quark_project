@@ -66,6 +66,7 @@ class QuarkBot(commands.Bot):
 
         # Load reminder Cog
         await self.load_extension("app.discord.cogs.reminder")
+        await self.load_extension("app.discord.cogs.quark_commands")
 
         # Sync slash commands to Discord
         await self.tree.sync()
@@ -100,6 +101,14 @@ class QuarkBot(commands.Bot):
             return
 
         content = message.content.strip()
+
+        from app.discord.cogs.quark_commands import RebootConfirmView, is_reboot_request
+
+        if is_reboot_request(content):
+            view = RebootConfirmView(requester_id=message.author.id)
+            await message.channel.send("⚠️ N100 서버를 재부팅할까? 확인이 필요해.", view=view)
+            return
+
         session_id = f"discord:{message.channel.id}"
         redis = self._redis
         db: AsyncSession | None = None
