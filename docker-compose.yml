@@ -3,6 +3,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: quoding-quark-backend:latest
     container_name: quark-api
     restart: unless-stopped
     env_file: .env
@@ -118,6 +119,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: quoding-quark-backend:latest
     container_name: quark-discord-bot
     restart: unless-stopped
     command: python -m app.services.discord_bot

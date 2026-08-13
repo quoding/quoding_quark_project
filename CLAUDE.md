@@ -50,6 +50,8 @@ docker compose exec quark-api alembic upgrade head
 cd backend && pytest -q
 ```
 
+- **`quark-api`와 `quark-discord-bot`은 같은 이미지(`quoding-quark-backend:latest`)를 공유** — 둘 다 `backend/` 소스로 빌드되고 `command`만 다름. `docker compose build quark-api` (또는 `up -d --build quark-api`) 한 번이면 두 컨테이너 다 최신 이미지를 쓰게 됨. 예전엔 서비스별로 이미지가 따로 빌드돼서 한쪽만 재빌드하면 다른 쪽(주로 discord-bot)이 옛날 코드로 계속 도는 문제가 있었음 — `image:` 태그를 맞춰서 구조적으로 막음. 새 backend 서비스를 compose에 추가할 때도 같은 이미지를 공유시킬지 고려할 것.
+
 ## 절대 하지 않는 것
 
 - ❌ **APScheduler** — asyncpg와 비호환 확인됨, 자체 polling loop 사용
