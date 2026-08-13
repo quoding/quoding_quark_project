@@ -16,6 +16,7 @@ const NAV: NavEntry[] = [
   { to: '/agenda', name: '일정 & 비서', ico: 'calendar' },
   { to: '/monitor', name: '모니터링', ico: 'monitor' },
   { to: '/automation', name: '자동화', ico: 'automation' },
+  { to: '/research', name: '연구 아카이브', ico: 'news' },
 ];
 
 interface SidebarProps {

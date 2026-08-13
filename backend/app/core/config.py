@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     caffeine_cutoff: str = "16:00"
     bedtime: str = "23:30"
 
+    # Research assistant (Arxiv, LangGraph) — comma-separated default keywords
+    research_keywords: str = "AI agent,RAG,LLM"
+
     # Host helper (reboot / Wake-on-LAN — runs outside Docker on the host)
     # Empty = auto-detect via this container's default gateway (the quark-internal
     # bridge). Set HOST_HELPER_URL to override if the helper ever moves off that bridge.

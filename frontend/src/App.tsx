@@ -8,6 +8,7 @@ import IotScreen from '@/pages/IotScreen';
 import AgendaScreen from '@/pages/AgendaScreen';
 import MonitorScreen from '@/pages/MonitorScreen';
 import AutomationScreen from '@/pages/AutomationScreen';
+import ResearchScreen from '@/pages/ResearchScreen';
 import { useMqtt } from '@/hooks/useMqtt';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/agenda" element={<AgendaScreen />} />
           <Route path="/monitor" element={<MonitorScreen />} />
           <Route path="/automation" element={<AutomationScreen />} />
+          <Route path="/research" element={<ResearchScreen />} />
         </Routes>
       </div>
     </div>

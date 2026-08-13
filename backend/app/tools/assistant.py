@@ -353,6 +353,21 @@ async def run_automation(ctx: RunContext[QuarkDeps], name: str) -> str:
     return f"'{auto.name}' 매크로 실행 지시: {auto.action_desc}"
 
 
+async def run_research_assistant(ctx: RunContext[QuarkDeps], keyword: str | None = None) -> str:
+    """Arxiv에서 최신 논문을 찾아 한국어로 요약해 저장한다 (LangGraph 파이프라인, 웹 대시보드 연구 아카이브에서 확인 가능).
+
+    Args:
+        keyword: 검색 키워드 (생략 시 설정된 기본 키워드들 전체로 조사).
+    """
+    from app.services.research_assistant import run_research_pipeline
+
+    result = await run_research_pipeline(keyword=keyword)
+    if result["saved"] == 0:
+        return f"조사 완료 — 새 논문 없음 (키워드: {', '.join(result['keywords'])}, 총 {result['fetched']}건 확인)"
+    titles = "\n".join(f"- {p['title']}" for p in result["papers"])
+    return f"새 논문 {result['saved']}건 저장했어:\n{titles}"
+
+
 ASSISTANT_TOOLS = (
     add_event,
     list_events,
@@ -370,6 +385,7 @@ ASSISTANT_TOOLS = (
     log_caffeine,
     save_automation,
     run_automation,
+    run_research_assistant,
 )
 
 

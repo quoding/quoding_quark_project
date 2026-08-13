@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.config import get_settings
+from app.services.discord_notify import send_discord_message as _send_discord_message
 
 logger = logging.getLogger(__name__)
 
@@ -177,24 +178,6 @@ async def _morning_brief() -> None:
         return
 
     await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
-
-
-async def _send_discord_message(channel_id: str, token: str, content: str) -> None:
-    """Send *content* to a Discord channel using the bot REST API (no gateway)."""
-    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    headers = {
-        "Authorization": f"Bot {token}",
-        "Content-Type": "application/json",
-    }
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url, json={"content": content[:2000]}, headers=headers, timeout=10.0
-            )
-            resp.raise_for_status()
-        logger.info("Message sent to Discord channel %s", channel_id)
-    except Exception:
-        logger.warning("Discord send failed", exc_info=True)
 
 
 async def _sensor_poll() -> None:
