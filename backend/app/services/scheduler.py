@@ -46,6 +46,12 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     scheduler.add_job(
+        _schedule_conflict_watch,
+        trigger=CronTrigger(hour=7, minute=30),
+        id="schedule-conflict-watch",
+        replace_existing=True,
+    )
+    scheduler.add_job(
         _sensor_poll,
         trigger=IntervalTrigger(seconds=30),
         id="sensor-poll",
@@ -381,6 +387,67 @@ async def _deadline_watch() -> None:
         logger.info("Deadline watch sent (%d item(s))", len(due_soon))
     except Exception:
         logger.warning("Deadline watch failed", exc_info=True)
+
+
+async def _schedule_conflict_watch() -> None:
+    """Daily 07:30 KST — Discord 경고 for overlapping events on today's Google Calendar.
+
+    종일(all-day) 일정은 시간 개념이 없어 겹침 판정에서 제외한다.
+    """
+    logger.info("Running schedule conflict watch")
+    cfg = get_settings()
+    if not cfg.discord_channel_id or not cfg.discord_token:
+        logger.warning("Schedule conflict watch skipped: discord not configured")
+        return
+
+    try:
+        from app.services import google_calendar
+
+        today = date.today()
+        day_start = datetime(today.year, today.month, today.day, 0, 0, 0).isoformat() + "+09:00"
+        day_end = datetime(today.year, today.month, today.day, 23, 59, 59).isoformat() + "+09:00"
+        events = await google_calendar.list_events(day_start, day_end)
+
+        timed = sorted(
+            (e for e in events if not e["all_day"] and e["start"] and e["end"]),
+            key=lambda e: e["start"],
+        )
+
+        conflicts: list[tuple[dict, dict]] = []
+        for a, b in zip(timed, timed[1:]):
+            if datetime.fromisoformat(b["start"]) < datetime.fromisoformat(a["end"]):
+                conflicts.append((a, b))
+
+        if not conflicts:
+            logger.debug("Schedule conflict watch: no overlaps today")
+            return
+
+        from app.core.database import AsyncSessionLocal
+        from app.models.agenda import Alert
+
+        def _hm(iso: str) -> str:
+            return iso[11:16] if len(iso) >= 16 else iso
+
+        lines = [
+            f"- {a['title']}({_hm(a['start'])}~{_hm(a['end'])}) ↔ {b['title']}({_hm(b['start'])}~{_hm(b['end'])})"
+            for a, b in conflicts
+        ]
+        async with AsyncSessionLocal() as db:
+            for a, b in conflicts:
+                db.add(
+                    Alert(
+                        title="일정 겹침",
+                        body=f"{a['title']} / {b['title']} 시간이 겹쳐.",
+                        urgent=True,
+                    )
+                )
+            await db.commit()
+
+        msg = "⚠️ 오늘 일정이 겹쳐:\n" + "\n".join(lines)
+        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        logger.info("Schedule conflict watch sent (%d conflict(s))", len(conflicts))
+    except Exception:
+        logger.warning("Schedule conflict watch failed", exc_info=True)
 
 
 async def _commit_reminder() -> None:
