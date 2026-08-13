@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -13,7 +14,15 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_KST = ZoneInfo("Asia/Seoul")
+
 scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+
+# 회의 5분 전 알림 — 오늘 하루 이미 알린 이벤트 id를 기억해 중복 발송 방지.
+# 매일 00:01 habit-daily-reset 잡에서 같이 비운다 (레코드별 fire_at을 관리하는 게
+# 아니라 고정 주기(1분)로 폴링하는 방식이라 CLAUDE.md의 "동적 리마인더에
+# APScheduler 금지" 규칙과 무관 — sensor-poll과 같은 패턴).
+_alerted_meeting_ids: set[str] = set()
 
 
 def _parse_hm(hm: str, default: tuple[int, int] = (16, 0)) -> tuple[int, int]:
@@ -49,6 +58,12 @@ def start_scheduler() -> None:
         _schedule_conflict_watch,
         trigger=CronTrigger(hour=7, minute=30),
         id="schedule-conflict-watch",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _meeting_reminder_poll,
+        trigger=IntervalTrigger(minutes=1),
+        id="meeting-reminder-poll",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -283,8 +298,9 @@ async def _daily_summary() -> None:
 
 
 async def _habit_daily_reset() -> None:
-    """매일 00:01 KST — 모든 습관의 done_today를 False로 리셋."""
+    """매일 00:01 KST — 모든 습관의 done_today를 False로 리셋 + 회의 알림 중복방지 셋 초기화."""
     logger.info("Running habit daily reset")
+    _alerted_meeting_ids.clear()
     try:
         from sqlalchemy import update
 
@@ -448,6 +464,36 @@ async def _schedule_conflict_watch() -> None:
         logger.info("Schedule conflict watch sent (%d conflict(s))", len(conflicts))
     except Exception:
         logger.warning("Schedule conflict watch failed", exc_info=True)
+
+
+async def _meeting_reminder_poll() -> None:
+    """1분마다 — 5분 이내 시작하는(0~5분) 오늘 캘린더 이벤트에 Discord 알림.
+
+    이미 알린 이벤트는 `_alerted_meeting_ids`로 중복 방지 (00:01에 초기화됨).
+    """
+    cfg = get_settings()
+    if not cfg.discord_channel_id or not cfg.discord_token:
+        return
+
+    try:
+        from app.services import google_calendar
+
+        now = datetime.now(_KST)
+        window_end = now + timedelta(minutes=6)
+        events = await google_calendar.list_events(now.isoformat(), window_end.isoformat())
+
+        for e in events:
+            if e["all_day"] or not e["start"] or e["id"] in _alerted_meeting_ids:
+                continue
+            start = datetime.fromisoformat(e["start"])
+            minutes_until = (start - now).total_seconds() / 60
+            if 0 <= minutes_until <= 5:
+                _alerted_meeting_ids.add(e["id"])
+                msg = f"🔔 {start.strftime('%H:%M')} \"{e['title']}\" 5분 전이야 — 준비해!"
+                await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+                logger.info("Meeting reminder sent for event %s", e["id"])
+    except Exception:
+        logger.warning("Meeting reminder poll failed", exc_info=True)
 
 
 async def _commit_reminder() -> None:
