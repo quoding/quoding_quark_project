@@ -304,6 +304,55 @@ async def log_caffeine(
     return f"카페인 기록했어: {cups}잔 ({cups * 100}mg)"
 
 
+async def save_automation(
+    ctx: RunContext[QuarkDeps],
+    name: str,
+    action_desc: str,
+    trigger_desc: str = "수동 실행 (매크로)",
+) -> str:
+    """자주 쓰는 명령/작업 순서를 매크로로 저장한다. 나중에 run_automation(name)으로 다시 불러 실행할 수 있다.
+
+    Args:
+        name: 매크로 이름 (예: "취침 준비").
+        action_desc: 실행할 동작을 자연어로 서술 (예: "오늘 할일 다 완료 처리하고 내일 아침 8시 기상 리마인더 등록해줘").
+        trigger_desc: 트리거 설명 (기본: 수동 실행 — 채팅/디스코드에서 이름으로 호출).
+    """
+    if ctx.deps.db is None:
+        return "매크로 저장 불가 (DB 연결 없음)"
+    from app.models.agenda import Automation
+
+    auto = Automation(name=name, trigger_desc=trigger_desc, action_desc=action_desc, icon="zap")
+    ctx.deps.db.add(auto)
+    await ctx.deps.db.flush()
+    await ctx.deps.db.commit()
+    return f"매크로 저장했어: {name}"
+
+
+async def run_automation(ctx: RunContext[QuarkDeps], name: str) -> str:
+    """저장된 매크로를 이름으로 찾아 실행한다. 반환된 동작 설명대로 필요한 다른 툴들을 이어서 직접 호출해 수행할 것.
+
+    Args:
+        name: 실행할 매크로 이름 (부분 일치 검색).
+    """
+    if ctx.deps.db is None:
+        return "매크로 조회 불가 (DB 연결 없음)"
+    from sqlalchemy import select
+
+    from app.models.agenda import Automation
+
+    result = await ctx.deps.db.execute(
+        select(Automation).where(Automation.name.ilike(f"%{name}%"), Automation.enabled.is_(True))
+    )
+    auto = result.scalars().first()
+    if auto is None:
+        return f"'{name}' 매크로를 못 찾았어. 이름을 다시 확인해줘."
+
+    auto.run_count += 1
+    await ctx.deps.db.flush()
+    await ctx.deps.db.commit()
+    return f"'{auto.name}' 매크로 실행 지시: {auto.action_desc}"
+
+
 ASSISTANT_TOOLS = (
     add_event,
     list_events,
@@ -319,6 +368,8 @@ ASSISTANT_TOOLS = (
     log_mood,
     log_sleep,
     log_caffeine,
+    save_automation,
+    run_automation,
 )
 
 
