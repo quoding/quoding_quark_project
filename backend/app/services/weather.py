@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -8,6 +9,42 @@ import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+_RETRY_ATTEMPTS = 3  # 최초 시도 + 2회 재시도
+_RETRY_BASE_DELAY = 1.0  # 초, 시도마다 2배씩 증가
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> httpx.Response:
+    """일시적 네트워크 오류/서버 오류만 짧게 재시도. 429는 서버 지시를 우선 따르고,
+    4xx(요청 자체 문제)는 재시도해도 소용없으니 바로 실패시킨다 — API를 과호출해서
+    차단당하는 상황을 피하기 위함."""
+    delay = _RETRY_BASE_DELAY
+    for attempt in range(1, _RETRY_ATTEMPTS + 1):
+        last_attempt = attempt == _RETRY_ATTEMPTS
+        try:
+            resp = await client.get(url, params=params)
+            if resp.status_code == 429 and not last_attempt:
+                retry_after = resp.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else delay * 2
+                logger.warning("Weather API rate-limited, backing off %.1fs", wait)
+                await asyncio.sleep(wait)
+                delay *= 2
+                continue
+            resp.raise_for_status()
+            return resp
+        except httpx.HTTPStatusError as exc:
+            if 500 <= exc.response.status_code < 600 and not last_attempt:
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            raise
+        except (httpx.TimeoutException, httpx.TransportError):
+            if not last_attempt:
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            raise
+    raise RuntimeError("unreachable")  # pragma: no cover
 
 _WMO_LABEL: dict[int, str] = {
     0: "맑음",
@@ -209,9 +246,10 @@ async def get_current_weather() -> dict[str, Any]:
     settings = get_settings()
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            weather_resp = await client.get(
+            weather_resp = await _get_with_retry(
+                client,
                 "https://api.open-meteo.com/v1/forecast",
-                params={
+                {
                     "latitude": settings.weather_lat,
                     "longitude": settings.weather_lon,
                     "current": "temperature_2m,weather_code",
@@ -220,20 +258,19 @@ async def get_current_weather() -> dict[str, Any]:
                     "forecast_days": 1,
                 },
             )
-            weather_resp.raise_for_status()
             wd: dict[str, Any] = weather_resp.json()
 
         async with httpx.AsyncClient(timeout=8.0) as client:
-            aqi_resp = await client.get(
+            aqi_resp = await _get_with_retry(
+                client,
                 "https://air-quality-api.open-meteo.com/v1/air-quality",
-                params={
+                {
                     "latitude": settings.weather_lat,
                     "longitude": settings.weather_lon,
                     "current": "pm2_5",
                     "timezone": "Asia/Seoul",
                 },
             )
-            aqi_resp.raise_for_status()
             aqd: dict[str, Any] = aqi_resp.json()
 
         temp: float = wd["current"]["temperature_2m"]
