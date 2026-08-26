@@ -11,12 +11,12 @@ interface NavEntry {
 }
 
 const NAV: NavEntry[] = [
-  { to: '/', name: '대시보드', ico: 'dashboard', badge: 'HOME' },
-  { to: '/iot', name: '집 제어', ico: 'home' },
-  { to: '/agenda', name: '일정 & 비서', ico: 'calendar' },
-  { to: '/monitor', name: '모니터링', ico: 'monitor' },
-  { to: '/automation', name: '자동화', ico: 'automation' },
-  { to: '/research', name: '연구 아카이브', ico: 'news' },
+  { to: '/legacy', name: '대시보드', ico: 'dashboard', badge: 'HOME' },
+  { to: '/legacy/iot', name: '집 제어', ico: 'home' },
+  { to: '/legacy/agenda', name: '일정 & 비서', ico: 'calendar' },
+  { to: '/legacy/monitor', name: '모니터링', ico: 'monitor' },
+  { to: '/legacy/automation', name: '자동화', ico: 'automation' },
+  { to: '/legacy/research', name: '연구 아카이브', ico: 'news' },
 ];
 
 interface SidebarProps {
@@ -46,7 +46,7 @@ export function Sidebar({ onToggle }: SidebarProps) {
           <NavLink
             key={n.to}
             to={n.to}
-            end={n.to === '/'}
+            end={n.to === '/legacy'}
             className={({ isActive }) => 'nav-item' + (isActive ? ' on' : '')}
           >
             <span className="nav-ico">
