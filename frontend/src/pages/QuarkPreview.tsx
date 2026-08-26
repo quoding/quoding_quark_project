@@ -258,6 +258,7 @@ export default function QuarkPreview() {
   const [widgetConfig,setWidgetConfig]=useState<PreviewWidgetConfig>(loadPreviewWidgets);
   const [dragWidget,setDragWidget]=useState<string|null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [showInstallHint, setShowInstallHint] = useState(false);
   const qc=useQueryClient();
   const mqttConnected=useMqttConnected();
   const activeScene=useHomeStore((s)=>s.scene);
@@ -282,6 +283,20 @@ export default function QuarkPreview() {
       window.removeEventListener('popstate', onPopState);
     };
   }, []);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const dismissed = localStorage.getItem('quark-install-hint-dismissed') === '1';
+    setShowInstallHint(isIOS && !isStandalone && !dismissed);
+  }, []);
+
+  const dismissInstallHint = () => {
+    localStorage.setItem('quark-install-hint-dismissed', '1');
+    setShowInstallHint(false);
+  };
 
   const navigate = (label: string, path: string) => {
     window.history.pushState({}, '', `/${path}`);
@@ -309,6 +324,12 @@ export default function QuarkPreview() {
 
   return (
     <div className="qv2-shell">
+      {showInstallHint && (
+        <div className="qv2-install-hint">
+          <span>iPhone에서 앱처럼 쓰려면 Safari 공유 버튼 <ExternalLink /> → "홈 화면에 추가"를 눌러보세요.</span>
+          <button onClick={dismissInstallHint} aria-label="안내 닫기"><X /></button>
+        </div>
+      )}
       <aside className={'qv2-sidebar' + (menuOpen ? ' is-open' : '')}>
         <div className="qv2-brand">
           <div className="qv2-logo"><img src={mascot} alt="Quark" /></div>
@@ -350,7 +371,7 @@ export default function QuarkPreview() {
           {activeNav === '홈' ? <>
           <section className="qv2-welcome">
             <div><span>{dateLabel}</span><h1>좋은 오후예요, 쿼딩님.</h1><p>오늘도 필요한 것만 간결하게 준비해뒀어요.</p></div>
-            <button className="qv2-customize" onClick={()=>setWidgetEdit(value=>!value)}><Settings2 /> {widgetEdit?'편집 완료':'대시보드 편집'}</button>
+            <button className="qv2-customize" onClick={()=>setWidgetEdit(value=>!value)}>{widgetEdit?'완료':'편집'}</button>
           </section>
 
           {widgetEdit&&<section className="qv2-widget-editor"><header><div><strong>위젯 편집</strong><span>끌어서 순서를 바꾸고 표시 여부와 크기를 선택하세요.</span></div><button onClick={()=>saveWidgets({active:PREVIEW_DEFAULT.slice(),sizes:{}})}>기본값</button></header><div>{PREVIEW_WIDGETS.map(([id,label])=><article draggable={widgetConfig.active.includes(id)} onDragStart={()=>setDragWidget(id)} onDragOver={e=>e.preventDefault()} onDrop={()=>dropWidget(id)} key={id}><span className="qv2-drag">⠿</span><strong>{label}</strong><button onClick={()=>saveWidgets({...widgetConfig,sizes:{...widgetConfig.sizes,[id]:widgetConfig.sizes[id]===2?1:2}})}>{widgetConfig.sizes[id]===2?'넓게':'보통'}</button><button className={widgetConfig.active.includes(id)?'active':''} onClick={()=>toggleWidget(id)}>{widgetConfig.active.includes(id)?'표시':'숨김'}</button></article>)}</div></section>}

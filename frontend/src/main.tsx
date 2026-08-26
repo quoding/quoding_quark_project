@@ -20,3 +20,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // 서비스워커 등록 실패는 앱 동작에 영향 없음 — 조용히 무시
+    });
+  });
+}
