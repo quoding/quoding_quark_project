@@ -26,6 +26,33 @@ scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 _alerted_meeting_ids: set[str] = set()
 
 
+async def _automation_enabled(slug: str) -> bool:
+    """Gate for fixed automations toggled from the 자동화 page — see automation_gate.py."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.automation_gate import is_enabled
+
+    try:
+        async with AsyncSessionLocal() as db:
+            enabled = await is_enabled(db, slug)
+    except Exception:
+        logger.warning("Automation gate check failed for %s, running anyway", slug, exc_info=True)
+        return True
+    if not enabled:
+        logger.info("Automation '%s' is disabled, skipping", slug)
+    return enabled
+
+
+async def _automation_mark_run(slug: str) -> None:
+    from app.core.database import AsyncSessionLocal
+    from app.services.automation_gate import mark_run
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await mark_run(db, slug)
+    except Exception:
+        logger.warning("Failed to mark automation run for %s", slug, exc_info=True)
+
+
 def _parse_hm(hm: str, default: tuple[int, int] = (16, 0)) -> tuple[int, int]:
     try:
         h, m = hm.split(":")
@@ -107,6 +134,8 @@ def stop_scheduler() -> None:
 
 async def _morning_brief() -> None:
     """Daily 08:00 KST — generate and send enhanced morning summary via Discord."""
+    if not await _automation_enabled("morning-brief"):
+        return
     logger.info("Running morning brief")
     cfg = get_settings()
     if not cfg.discord_channel_id or not cfg.discord_token:
@@ -178,6 +207,7 @@ async def _morning_brief() -> None:
         return
 
     await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
+    await _automation_mark_run("morning-brief")
 
 
 async def _sensor_poll() -> None:
@@ -189,6 +219,8 @@ async def _sensor_poll() -> None:
 
 async def _weekly_review() -> None:
     """Every Friday 17:00 KST — generate weekly review and send via Discord."""
+    if not await _automation_enabled("weekly-review"):
+        return
     logger.info("Running weekly review")
     cfg = get_settings()
     if not cfg.discord_channel_id or not cfg.discord_token:
@@ -254,6 +286,7 @@ async def _weekly_review() -> None:
         return
 
     await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
+    await _automation_mark_run("weekly-review")
 
 
 async def _daily_summary() -> None:
@@ -282,8 +315,10 @@ async def _daily_summary() -> None:
 
 async def _habit_daily_reset() -> None:
     """매일 00:01 KST — 모든 습관의 done_today를 False로 리셋 + 회의 알림 중복방지 셋 초기화."""
-    logger.info("Running habit daily reset")
     _alerted_meeting_ids.clear()
+    if not await _automation_enabled("habit-daily-reset"):
+        return
+    logger.info("Running habit daily reset")
     try:
         from sqlalchemy import update
 
@@ -294,6 +329,7 @@ async def _habit_daily_reset() -> None:
             await db.execute(update(Habit).values(done_today=False))
             await db.commit()
         logger.info("Habit daily reset complete")
+        await _automation_mark_run("habit-daily-reset")
     except Exception:
         logger.warning("Habit daily reset failed", exc_info=True)
 
@@ -484,6 +520,8 @@ async def _commit_reminder() -> None:
 
     Skips silently if settings.github_username is empty.
     """
+    if not await _automation_enabled("commit-reminder"):
+        return
     cfg = get_settings()
     if not cfg.github_username:
         logger.debug("Commit reminder skipped: github_username not configured")
@@ -517,3 +555,4 @@ async def _commit_reminder() -> None:
         msg = f"🔔 오늘 커밋이 없어! ({today.isoformat()}) 코드 한 줄이라도 남겨두자."
         await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
         logger.info("Commit reminder sent")
+    await _automation_mark_run("commit-reminder")

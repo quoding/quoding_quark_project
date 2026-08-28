@@ -63,6 +63,10 @@ class Automation(Base):
     icon: Mapped[str] = mapped_column(Text, default="zap")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     run_count: Mapped[int] = mapped_column(Integer, default=0)
+    # "macro"(사용자가 채팅으로 저장) | "cron"(scheduler.py 고정 job) | "mqtt_rule"(rule_router.py 고정 규칙)
+    # cron/mqtt_rule은 slug로 실행 코드와 연결됨 — app/services/automation_gate.py 참고.
+    kind: Mapped[str] = mapped_column(Text, default="macro", server_default="macro")
+    slug: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

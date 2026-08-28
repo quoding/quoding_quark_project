@@ -47,6 +47,19 @@ class RuleRouter:
         last_alert: dict[str, float] = {}
 
         async def _low_moisture_alert(msg: MqttMessage) -> None:
+            from app.core.database import AsyncSessionLocal
+            from app.services.automation_gate import is_enabled, mark_run
+
+            try:
+                async with AsyncSessionLocal() as db:
+                    enabled = await is_enabled(db, "plant-watering")
+            except Exception:
+                logger.warning("Automation gate check failed for plant-watering, running anyway", exc_info=True)
+                enabled = True
+            if not enabled:
+                logger.info("Automation 'plant-watering' is disabled, skipping")
+                return
+
             val = msg.payload.get("value", 100) if isinstance(msg.payload, dict) else 100
             logger.warning("Low moisture on %s: %s%%", msg.topic, val)
 
@@ -60,6 +73,12 @@ class RuleRouter:
             parts = msg.topic.split("/")
             device = parts[2] if len(parts) > 2 else msg.topic
             await send_discord_message(f"🌱 {device} 토양 수분이 {val}%야 — 물 줄 때 됐어!")
+
+            try:
+                async with AsyncSessionLocal() as db:
+                    await mark_run(db, "plant-watering")
+            except Exception:
+                logger.warning("Failed to mark automation run for plant-watering", exc_info=True)
 
         self.register(
             Rule(
