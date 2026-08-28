@@ -68,11 +68,11 @@ class RuleRouter:
                 return
             last_alert[msg.topic] = now
 
-            from app.services.notify import send_discord_message
+            from app.services.notify import notify
 
             parts = msg.topic.split("/")
             device = parts[2] if len(parts) > 2 else msg.topic
-            await send_discord_message(f"🌱 {device} 토양 수분이 {val}%야 — 물 줄 때 됐어!")
+            await notify(f"🌱 {device} 토양 수분이 {val}%야 — 물 줄 때 됐어!")
 
             try:
                 async with AsyncSessionLocal() as db:

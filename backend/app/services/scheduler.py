@@ -11,7 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.config import get_settings
-from app.services.discord_notify import send_discord_message as _send_discord_message
+from app.services.notify import is_discord_notify_enabled, is_push_notify_enabled, notify
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +137,8 @@ async def _morning_brief() -> None:
     if not await _automation_enabled("morning-brief"):
         return
     logger.info("Running morning brief")
-    cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
-        logger.warning("Morning brief skipped: discord_channel_id or discord_token not configured")
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
+        logger.warning("Morning brief skipped: both notification channels disabled")
         return
 
     try:
@@ -206,7 +205,7 @@ async def _morning_brief() -> None:
         logger.warning("Morning brief: content generation failed", exc_info=True)
         return
 
-    await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
+    await notify(content)
     await _automation_mark_run("morning-brief")
 
 
@@ -222,9 +221,8 @@ async def _weekly_review() -> None:
     if not await _automation_enabled("weekly-review"):
         return
     logger.info("Running weekly review")
-    cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
-        logger.warning("Weekly review skipped: discord not configured")
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
+        logger.warning("Weekly review skipped: both notification channels disabled")
         return
 
     try:
@@ -285,7 +283,7 @@ async def _weekly_review() -> None:
         logger.warning("Weekly review: content generation failed", exc_info=True)
         return
 
-    await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, content)
+    await notify(content)
     await _automation_mark_run("weekly-review")
 
 
@@ -341,7 +339,7 @@ async def _caffeine_cutoff_alert() -> None:
     """
     logger.info("Running caffeine cutoff alert")
     cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
         logger.warning("Caffeine cutoff alert skipped: discord not configured")
         return
 
@@ -367,7 +365,7 @@ async def _caffeine_cutoff_alert() -> None:
             await db.commit()
 
         msg = f"☕ 카페인 컷오프 시간이야 ({cfg.caffeine_cutoff}) — 오늘 {cups}잔 마셨어. 이제 디카페인 권장!"
-        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        await notify(msg)
         logger.info("Caffeine cutoff alert sent")
     except Exception:
         logger.warning("Caffeine cutoff alert failed", exc_info=True)
@@ -381,9 +379,8 @@ async def _deadline_watch() -> None:
     가능한 건 D-Day뿐이다.
     """
     logger.info("Running deadline watch")
-    cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
-        logger.warning("Deadline watch skipped: discord not configured")
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
+        logger.warning("Deadline watch skipped: both notification channels disabled")
         return
 
     try:
@@ -418,7 +415,7 @@ async def _deadline_watch() -> None:
             await db.commit()
 
         msg = "⏰ 3일 내 마감 임박:\n" + "\n".join(lines)
-        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        await notify(msg)
         logger.info("Deadline watch sent (%d item(s))", len(due_soon))
     except Exception:
         logger.warning("Deadline watch failed", exc_info=True)
@@ -430,9 +427,8 @@ async def _schedule_conflict_watch() -> None:
     종일(all-day) 일정은 시간 개념이 없어 겹침 판정에서 제외한다.
     """
     logger.info("Running schedule conflict watch")
-    cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
-        logger.warning("Schedule conflict watch skipped: discord not configured")
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
+        logger.warning("Schedule conflict watch skipped: both notification channels disabled")
         return
 
     try:
@@ -479,7 +475,7 @@ async def _schedule_conflict_watch() -> None:
             await db.commit()
 
         msg = "⚠️ 오늘 일정이 겹쳐:\n" + "\n".join(lines)
-        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        await notify(msg)
         logger.info("Schedule conflict watch sent (%d conflict(s))", len(conflicts))
     except Exception:
         logger.warning("Schedule conflict watch failed", exc_info=True)
@@ -490,8 +486,7 @@ async def _meeting_reminder_poll() -> None:
 
     이미 알린 이벤트는 `_alerted_meeting_ids`로 중복 방지 (00:01에 초기화됨).
     """
-    cfg = get_settings()
-    if not cfg.discord_channel_id or not cfg.discord_token:
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
         return
 
     try:
@@ -509,7 +504,7 @@ async def _meeting_reminder_poll() -> None:
             if 0 <= minutes_until <= 5:
                 _alerted_meeting_ids.add(e["id"])
                 msg = f"🔔 {start.strftime('%H:%M')} \"{e['title']}\" 5분 전이야 — 준비해!"
-                await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+                await notify(msg)
                 logger.info("Meeting reminder sent for event %s", e["id"])
     except Exception:
         logger.warning("Meeting reminder poll failed", exc_info=True)
@@ -526,7 +521,7 @@ async def _commit_reminder() -> None:
     if not cfg.github_username:
         logger.debug("Commit reminder skipped: github_username not configured")
         return
-    if not cfg.discord_channel_id or not cfg.discord_token:
+    if not await is_discord_notify_enabled() and not await is_push_notify_enabled():
         logger.warning("Commit reminder skipped: discord not configured")
         return
 
@@ -553,6 +548,6 @@ async def _commit_reminder() -> None:
 
     if not has_commit:
         msg = f"🔔 오늘 커밋이 없어! ({today.isoformat()}) 코드 한 줄이라도 남겨두자."
-        await _send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        await notify(msg)
         logger.info("Commit reminder sent")
     await _automation_mark_run("commit-reminder")

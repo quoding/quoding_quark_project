@@ -20,7 +20,7 @@ from langgraph.graph import END, StateGraph
 from sqlalchemy import select
 
 from app.core.config import get_settings
-from app.services.discord_notify import send_discord_message
+from app.services.notify import notify
 
 logger = logging.getLogger(__name__)
 
@@ -186,11 +186,10 @@ async def _save_node(state: ResearchState) -> dict[str, Any]:
             saved.append(p)
         await db.commit()
 
-    cfg = get_settings()
-    if saved and cfg.discord_channel_id and cfg.discord_token:
+    if saved:
         lines = [f"- {p['title']} (인용 {p.get('citation_count', 0)}회)" for p in saved]
         msg = f"📚 새 논문 {len(saved)}건 저장했어 (키워드: {state['keyword']}):\n" + "\n".join(lines)
-        await send_discord_message(cfg.discord_channel_id, cfg.discord_token, msg)
+        await notify(msg)
 
     return {"saved": saved}
 

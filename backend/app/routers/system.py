@@ -12,6 +12,12 @@ from app.services.github_stats import get_github_stats
 from app.services.host_helper import reboot_host, wake_on_lan
 from app.services.market import get_market_data
 from app.services.news import get_news
+from app.services.notify import (
+    is_discord_notify_enabled,
+    is_push_notify_enabled,
+    set_discord_notify_enabled,
+    set_push_notify_enabled,
+)
 from app.services.openai_usage import get_openai_usage
 from app.services.service_health import get_service_health
 from app.services.system_stats import get_system_stats
@@ -95,6 +101,31 @@ async def get_embedding_toggle() -> dict[str, bool]:
 async def patch_embedding_toggle(body: EmbeddingToggleIn) -> dict[str, bool]:
     await set_embedding_enabled(body.enabled)
     return {"enabled": body.enabled}
+
+
+class NotifySettingsIn(BaseModel):
+    discord_enabled: bool | None = None
+    push_enabled: bool | None = None
+
+
+@router.get("/notify-settings")
+async def get_notify_settings() -> dict[str, bool]:
+    return {
+        "discord_enabled": await is_discord_notify_enabled(),
+        "push_enabled": await is_push_notify_enabled(),
+    }
+
+
+@router.patch("/notify-settings")
+async def patch_notify_settings(body: NotifySettingsIn) -> dict[str, bool]:
+    if body.discord_enabled is not None:
+        await set_discord_notify_enabled(body.discord_enabled)
+    if body.push_enabled is not None:
+        await set_push_notify_enabled(body.push_enabled)
+    return {
+        "discord_enabled": await is_discord_notify_enabled(),
+        "push_enabled": await is_push_notify_enabled(),
+    }
 
 
 @router.post("/reboot")

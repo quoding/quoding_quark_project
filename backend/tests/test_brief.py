@@ -1,4 +1,4 @@
-"""Morning brief: content generation + Discord dispatch."""
+"""Morning brief: content generation + notification dispatch."""
 from __future__ import annotations
 
 from typing import Any
@@ -9,8 +9,9 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.quark_agent import quark_agent
+from app.services.notify import send_discord_message
 from app.services.rag import create_morning_brief_content
-from app.services.scheduler import _morning_brief, _send_discord_message
+from app.services.scheduler import _morning_brief
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ async def test_morning_brief_content_returns_string(mock_db: AsyncMock) -> None:
     assert isinstance(content, str) and content
 
 
-# ── _send_discord_message ─────────────────────────────────────────────────────
+# ── send_discord_message ──────────────────────────────────────────────────────
 
 
 async def test_send_discord_message_posts_to_api() -> None:
@@ -48,8 +49,13 @@ async def test_send_discord_message_posts_to_api() -> None:
 
         post = mock_post
 
-    with patch("app.services.scheduler.httpx.AsyncClient", return_value=_FakeClient()):
-        await _send_discord_message("123456", "tok", "오늘 날씨는 맑아!")
+    with (
+        patch("app.services.notify.httpx.AsyncClient", return_value=_FakeClient()),
+        patch("app.services.notify.get_settings") as mock_cfg,
+    ):
+        mock_cfg.return_value.discord_channel_id = "123456"
+        mock_cfg.return_value.discord_token = "tok"
+        await send_discord_message("오늘 날씨는 맑아!")
 
     mock_post.assert_awaited_once()
     call_kwargs: Any = mock_post.await_args.kwargs
@@ -60,12 +66,13 @@ async def test_send_discord_message_posts_to_api() -> None:
 # ── _morning_brief (scheduler) ───────────────────────────────────────────────
 
 
-async def test_morning_brief_skipped_without_discord_config() -> None:
-    with patch("app.services.scheduler.get_settings") as mock_cfg:
-        mock_cfg.return_value.discord_channel_id = ""
-        mock_cfg.return_value.discord_token = ""
-        with patch("app.services.rag.create_morning_brief_content") as gen_mock:
-            await _morning_brief()
+async def test_morning_brief_skipped_when_both_channels_disabled() -> None:
+    with (
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.rag.create_morning_brief_content") as gen_mock,
+    ):
+        await _morning_brief()
     gen_mock.assert_not_called()
 
 
@@ -83,12 +90,13 @@ async def test_morning_brief_generates_and_sends() -> None:
         async def __aexit__(self, *exc: object) -> bool:
             return False
 
-    mock_send = AsyncMock()
+    mock_notify = AsyncMock()
     mock_result = MagicMock()
     mock_result.output = "브리핑 텍스트"
 
     with (
-        patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
         patch("app.services.weather.get_current_weather", return_value={
             "temp": 25, "label": "맑음", "hi": 28, "lo": 20, "pm25": 10, "aqi_grade": "좋음",
         }),
@@ -97,13 +105,11 @@ async def test_morning_brief_generates_and_sends() -> None:
         ])),
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeSessionCtx()),
         patch("app.agents.quark_agent.quark_agent") as mock_agent,
-        patch("app.services.scheduler._send_discord_message", mock_send),
+        patch("app.services.scheduler.notify", mock_notify),
     ):
-        mock_cfg.return_value.discord_channel_id = "999"
-        mock_cfg.return_value.discord_token = "tok"
         mock_agent.run = AsyncMock(return_value=mock_result)
         await _morning_brief()
 
-    mock_send.assert_awaited_once()
-    args: _Any = mock_send.await_args
-    assert "브리핑" in args[0][2]
+    mock_notify.assert_awaited_once()
+    args: _Any = mock_notify.await_args
+    assert "브리핑" in args[0][0]

@@ -64,11 +64,9 @@ async def test_commit_reminder_skipped_when_disabled() -> None:
     with (
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeSessionCtx(False)),
         patch("app.services.scheduler.get_settings") as mock_cfg,
-        patch("app.services.scheduler._send_discord_message") as send_mock,
+        patch("app.services.scheduler.notify") as send_mock,
     ):
         mock_cfg.return_value.github_username = "quoding"
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
         await _commit_reminder()
     send_mock.assert_not_called()
 
@@ -77,12 +75,12 @@ async def test_commit_reminder_runs_when_enabled() -> None:
     with (
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeSessionCtx(True)),
         patch("app.services.scheduler.get_settings") as mock_cfg,
-        patch("app.services.scheduler._send_discord_message") as send_mock,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.scheduler.notify") as send_mock,
         patch("httpx.AsyncClient") as mock_client_cls,
     ):
         mock_cfg.return_value.github_username = "quoding"
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = []

@@ -10,18 +10,18 @@ from app.services.scheduler import _commit_reminder, _weekly_review
 # ── _weekly_review ────────────────────────────────────────────────────────────
 
 
-async def test_weekly_review_skipped_no_discord() -> None:
-    with patch("app.services.scheduler.get_settings") as mock_cfg:
-        mock_cfg.return_value.discord_channel_id = ""
-        mock_cfg.return_value.discord_token = ""
-        mock_cfg.return_value.github_username = ""
-        with patch("app.services.scheduler._send_discord_message") as send_mock:
-            await _weekly_review()
-    send_mock.assert_not_called()
+async def test_weekly_review_skipped_when_both_channels_disabled() -> None:
+    with (
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.scheduler.notify") as notify_mock,
+    ):
+        await _weekly_review()
+    notify_mock.assert_not_called()
 
 
 async def test_weekly_review_generates_and_sends() -> None:
-    mock_send = AsyncMock()
+    mock_notify = AsyncMock()
 
     class _FakeSessionCtx:
         async def __aenter__(self) -> AsyncMock:
@@ -37,37 +37,36 @@ async def test_weekly_review_generates_and_sends() -> None:
             return False
 
     with (
-        patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
         patch("app.core.database.AsyncSessionLocal", return_value=_FakeSessionCtx()),
-        patch("app.services.scheduler._send_discord_message", mock_send),
+        patch("app.services.scheduler.notify", mock_notify),
         patch("app.agents.quark_agent.quark_agent") as mock_agent,
     ):
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
-        mock_cfg.return_value.github_username = ""
-
         mock_result = MagicMock()
         mock_result.output = "주간 리뷰 내용"
         mock_agent.run = AsyncMock(return_value=mock_result)
 
         await _weekly_review()
 
-    mock_send.assert_awaited_once()
-    args: Any = mock_send.await_args
-    assert "주간 리뷰" in args[0][2]
+    mock_notify.assert_awaited_once()
+    args: Any = mock_notify.await_args
+    assert "주간 리뷰" in args[0][0]
 
 
 # ── _commit_reminder ──────────────────────────────────────────────────────────
 
 
 async def test_commit_reminder_skipped_no_username() -> None:
-    with patch("app.services.scheduler.get_settings") as mock_cfg:
+    with (
+        patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
+        patch("app.services.scheduler.notify") as notify_mock,
+    ):
         mock_cfg.return_value.github_username = ""
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
-        with patch("app.services.scheduler._send_discord_message") as send_mock:
-            await _commit_reminder()
-    send_mock.assert_not_called()
+        await _commit_reminder()
+    notify_mock.assert_not_called()
 
 
 async def test_commit_reminder_skipped_when_commit_exists() -> None:
@@ -95,15 +94,15 @@ async def test_commit_reminder_skipped_when_commit_exists() -> None:
 
     with (
         patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
         patch("app.services.scheduler.httpx.AsyncClient", return_value=_FakeClient()),
-        patch("app.services.scheduler._send_discord_message") as send_mock,
+        patch("app.services.scheduler.notify") as notify_mock,
     ):
         mock_cfg.return_value.github_username = "testuser"
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
         await _commit_reminder()
 
-    send_mock.assert_not_called()
+    notify_mock.assert_not_called()
 
 
 async def test_commit_reminder_sends_when_no_commit() -> None:
@@ -121,20 +120,20 @@ async def test_commit_reminder_sends_when_no_commit() -> None:
         async def get(self, *_: Any, **__: Any) -> MagicMock:
             return mock_resp
 
-    mock_send = AsyncMock()
+    mock_notify = AsyncMock()
     with (
         patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
         patch("app.services.scheduler.httpx.AsyncClient", return_value=_FakeClient()),
-        patch("app.services.scheduler._send_discord_message", mock_send),
+        patch("app.services.scheduler.notify", mock_notify),
     ):
         mock_cfg.return_value.github_username = "testuser"
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
         await _commit_reminder()
 
-    mock_send.assert_awaited_once()
-    args: Any = mock_send.await_args
-    assert "커밋" in args[0][2]
+    mock_notify.assert_awaited_once()
+    args: Any = mock_notify.await_args
+    assert "커밋" in args[0][0]
 
 
 async def test_commit_reminder_skips_on_api_failure() -> None:
@@ -148,15 +147,15 @@ async def test_commit_reminder_skips_on_api_failure() -> None:
         async def get(self, *_: Any, **__: Any) -> None:
             raise ConnectionError("timeout")
 
-    mock_send = AsyncMock()
+    mock_notify = AsyncMock()
     with (
         patch("app.services.scheduler.get_settings") as mock_cfg,
+        patch("app.services.scheduler.is_discord_notify_enabled", AsyncMock(return_value=True)),
+        patch("app.services.scheduler.is_push_notify_enabled", AsyncMock(return_value=False)),
         patch("app.services.scheduler.httpx.AsyncClient", return_value=_FailClient()),
-        patch("app.services.scheduler._send_discord_message", mock_send),
+        patch("app.services.scheduler.notify", mock_notify),
     ):
         mock_cfg.return_value.github_username = "testuser"
-        mock_cfg.return_value.discord_channel_id = "123"
-        mock_cfg.return_value.discord_token = "tok"
         await _commit_reminder()
 
-    mock_send.assert_not_called()
+    mock_notify.assert_not_called()
