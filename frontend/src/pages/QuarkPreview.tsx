@@ -146,8 +146,42 @@ function AgendaPage() {
   </>;
 }
 
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+function isStandaloneApp(): boolean {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
 function MonitorPage() {
   const qc=useQueryClient();
+  const [pushMessage,setPushMessage]=useState('');
+  const pushSupported='serviceWorker' in navigator && 'PushManager' in window;
+  const {data:pushStatus}=useQuery<{subscriptions:number}>({queryKey:['push-status'],queryFn:()=>axios.get('/api/push/status').then(r=>r.data),enabled:pushSupported});
+  const subscribePush=useMutation({
+    mutationFn: async () => {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') throw new Error('알림 권한이 거부됐어요.');
+      const registration = await navigator.serviceWorker.ready;
+      const { data } = await axios.get<{ key: string }>('/api/push/public-key');
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.key) as BufferSource,
+      });
+      await axios.post('/api/push/subscribe', subscription.toJSON());
+    },
+    onSuccess: () => { setPushMessage('알림이 켜졌어요.'); qc.invalidateQueries({queryKey:['push-status']}); },
+    onError: (err) => setPushMessage(err instanceof Error ? err.message : '알림 등록에 실패했어요.'),
+  });
+  const testPush=useMutation({
+    mutationFn: () => axios.post<{sent:number;removed:number}>('/api/push/test').then(r=>r.data),
+    onSuccess: (data) => setPushMessage(`${data.sent}건 발송, ${data.removed}건 만료돼서 정리됨`),
+    onError: () => setPushMessage('테스트 알림 발송에 실패했어요.'),
+  });
   const {data:system}=useQuery<SystemStats>({queryKey:['system'],queryFn:()=>axios.get('/api/system/stats').then(r=>r.data),refetchInterval:60_000});
   const {data:serviceData}=useQuery<ServiceEntry[]>({queryKey:['services'],queryFn:()=>axios.get('/api/system/services').then(r=>r.data),refetchInterval:10_000});
   const {data:dockerData}=useQuery<DockerEntry[]>({queryKey:['docker'],queryFn:()=>axios.get('/api/system/docker').then(r=>r.data),refetchInterval:60_000});
@@ -165,7 +199,15 @@ function MonitorPage() {
     <section className="qv2-stat-grid">{stats.map(({name,value,unit,icon:StatIcon})=><article className="qv2-card" key={name}><div><span><StatIcon/></span><small>{name}</small></div><strong>{value}<b>{unit}</b></strong><div><i style={{width:`${value}%`}}/></div><p>정상 범위</p></article>)}</section>
     <section className="qv2-monitor-grid"><article className="qv2-card qv2-services"><div className="qv2-card-head"><div><span className="qv2-eyebrow">SERVICES</span><h3>서비스 상태</h3></div><span className="qv2-good"><i/> {services.filter(item=>item.status==='up').length} / {services.length} 정상</span></div>{services.map(item=><div className="qv2-service-row" key={item.name}><i className={item.status}/><div><strong>{item.name}</strong><small>{'uptime' in item?`uptime ${item.uptime}`:'실시간 상태 확인'}</small></div><span>{item.latency||'—'}{item.latency?' ms':''}</span><b className={item.status}>{item.status==='up'?'정상':item.status==='warn'?'지연':'중지'}</b></div>)}</article><article className="qv2-card qv2-docker"><div className="qv2-card-head"><div><span className="qv2-eyebrow">CONTAINERS</span><h3>Docker</h3></div><Database/></div>{docker.map(item=><div key={item.name}><span className={item.status}/><div><strong>{item.name}</strong><small>{item.img}</small></div><p>{item.status==='running'?`${item.cpu}% · ${item.mem} MB`:'stopped'}</p></div>)}</article></section>
     <section className="qv2-card qv2-activity-card"><div className="qv2-card-head"><div><span className="qv2-eyebrow">GITHUB</span><h3>개발 활동</h3></div><GitBranch/></div><div className="qv2-github-summary"><div><strong>{gh.streak}</strong><span>일 연속 커밋</span></div><div><strong>{gh.today}</strong><span>오늘</span></div><div><strong>{gh.week}</strong><span>이번 주</span></div><p>마지막 커밋 {gh.lastCommit}</p></div><div className="qv2-commit-grid">{Array.from({length:112},(_,i)=><i key={i} data-level={(i*7+i%5)%5}/>)}</div></section>
-    <section className="qv2-monitor-grid"><article className="qv2-card qv2-system-actions"><div className="qv2-card-head"><div><span className="qv2-eyebrow">CONTROL</span><h3>시스템 제어</h3></div><Settings2/></div><button disabled={reboot.isPending} onClick={()=>window.confirm('미니PC를 재부팅할까요? 잠시 접속할 수 없습니다.')&&reboot.mutate()}>{reboot.isPending?'요청 중…':reboot.isSuccess?'재부팅 요청됨':'미니PC 재부팅'}</button><button disabled={wake.isPending} onClick={()=>wake.mutate()}>{wake.isPending?'신호 전송 중…':wake.isSuccess?'깨우기 신호 전송됨':'노트북 켜기 (WoL)'}</button><div className="qv2-embedding"><div><strong>RAG 임베딩</strong><small>대화 기억 저장·검색</small></div><button disabled={toggleEmbedding.isPending} onClick={()=>toggleEmbedding.mutate(!(embedding?.enabled??true))}>{embedding?.enabled??true?<ToggleRight/>:<ToggleLeft/>}</button></div></article><article className="qv2-card qv2-usage-card"><div className="qv2-card-head"><div><span className="qv2-eyebrow">OPENAI</span><h3>API 사용량</h3></div><span className="qv2-count">오늘</span></div><strong>{totalTokens.toLocaleString('ko-KR')}<small> tokens</small></strong>{usage?.models?.map(model=><div key={model.name}><span>{model.name}</span><b>{model.total_tokens.toLocaleString('ko-KR')}</b></div>)}{(!usage?.models||usage.models.length===0)&&<p className="qv2-empty">사용량 데이터를 불러오지 못했습니다.</p>}</article></section>
+    <section className="qv2-monitor-grid"><article className="qv2-card qv2-system-actions"><div className="qv2-card-head"><div><span className="qv2-eyebrow">CONTROL</span><h3>시스템 제어</h3></div><Settings2/></div><button disabled={reboot.isPending} onClick={()=>window.confirm('미니PC를 재부팅할까요? 잠시 접속할 수 없습니다.')&&reboot.mutate()}>{reboot.isPending?'요청 중…':reboot.isSuccess?'재부팅 요청됨':'미니PC 재부팅'}</button><button disabled={wake.isPending} onClick={()=>wake.mutate()}>{wake.isPending?'신호 전송 중…':wake.isSuccess?'깨우기 신호 전송됨':'노트북 켜기 (WoL)'}</button><div className="qv2-embedding"><div><strong>RAG 임베딩</strong><small>대화 기억 저장·검색</small></div><button disabled={toggleEmbedding.isPending} onClick={()=>toggleEmbedding.mutate(!(embedding?.enabled??true))}>{embedding?.enabled??true?<ToggleRight/>:<ToggleLeft/>}</button></div>
+      <div className="qv2-embedding"><div><strong>웹 푸시 알림</strong><small>{pushSupported&&isStandaloneApp()?(pushStatus?.subscriptions?`${pushStatus.subscriptions}대 등록됨`:'아직 등록 안 됨'):'홈 화면 앱에서만 가능'}</small></div>
+        {pushSupported&&isStandaloneApp()
+          ? <button className="qv2-push-toggle" disabled={subscribePush.isPending} onClick={()=>subscribePush.mutate()}>{subscribePush.isPending?'등록 중…':'알림 켜기'}</button>
+          : <small className="qv2-push-hint">홈 화면에 추가한 뒤 열어주세요</small>}
+      </div>
+      {pushSupported&&isStandaloneApp()&&(pushStatus?.subscriptions??0)>0&&<button className="qv2-push-test" disabled={testPush.isPending} onClick={()=>testPush.mutate()}>{testPush.isPending?'보내는 중…':'테스트 알림 보내기'}</button>}
+      {pushMessage&&<p className="qv2-push-message">{pushMessage}</p>}
+    </article><article className="qv2-card qv2-usage-card"><div className="qv2-card-head"><div><span className="qv2-eyebrow">OPENAI</span><h3>API 사용량</h3></div><span className="qv2-count">오늘</span></div><strong>{totalTokens.toLocaleString('ko-KR')}<small> tokens</small></strong>{usage?.models?.map(model=><div key={model.name}><span>{model.name}</span><b>{model.total_tokens.toLocaleString('ko-KR')}</b></div>)}{(!usage?.models||usage.models.length===0)&&<p className="qv2-empty">사용량 데이터를 불러오지 못했습니다.</p>}</article></section>
   </>;
 }
 
@@ -279,6 +321,19 @@ function ChatPage({ messages, streaming, error, sessionId, sendChat, loadSession
       </div>
     </div>
   );
+}
+
+function SettingsPage() {
+  const qc=useQueryClient();
+  const {data:settings}=useQuery<{discord_enabled:boolean;push_enabled:boolean}>({queryKey:['notify-settings'],queryFn:()=>axios.get('/api/system/notify-settings').then(r=>r.data)});
+  const patch=useMutation({mutationFn:(body:{discord_enabled?:boolean;push_enabled?:boolean})=>axios.patch('/api/system/notify-settings',body),onSuccess:()=>qc.invalidateQueries({queryKey:['notify-settings']})});
+  return <><PageIntro eyebrow="PREFERENCES" title="설정" description="알림을 어디로 받을지 선택하세요." />
+    <section className="qv2-card qv2-system-actions">
+      <div className="qv2-card-head"><div><span className="qv2-eyebrow">NOTIFICATIONS</span><h3>알림 채널</h3></div><Bell/></div>
+      <div className="qv2-embedding"><div><strong>디스코드 알림</strong><small>아침 브리핑·마감·자동화 알림을 디스코드로</small></div><button disabled={patch.isPending} onClick={()=>patch.mutate({discord_enabled:!(settings?.discord_enabled??true)})}>{settings?.discord_enabled??true?<ToggleRight/>:<ToggleLeft/>}</button></div>
+      <div className="qv2-embedding"><div><strong>폰 푸시 알림</strong><small>홈 화면 앱에 "알림 켜기"를 먼저 해야 와요 (모니터링 페이지)</small></div><button disabled={patch.isPending} onClick={()=>patch.mutate({push_enabled:!(settings?.push_enabled??true)})}>{settings?.push_enabled??true?<ToggleRight/>:<ToggleLeft/>}</button></div>
+    </section>
+  </>;
 }
 
 function SecondaryPage({ page }: { page: string }) {
@@ -455,7 +510,7 @@ export default function QuarkPreview() {
             <div><span className="qv2-live-dot" /><strong>모든 시스템 정상</strong></div>
             <span>마지막 확인 방금 전</span>
           </div>
-          <button><Settings2 /><span>설정</span></button>
+          <button onClick={()=>navigate('설정','settings')}><Settings2 /><span>설정</span></button>
           <div className="qv2-user"><CircleUserRound /><div><strong>쿼딩</strong><span>관리자</span></div><MoreHorizontal /></div>
         </div>
       </aside>
@@ -544,7 +599,7 @@ export default function QuarkPreview() {
           <HomeExtras config={widgetConfig} />
           </> : activeNav === '채팅' ? (
             <ChatPage messages={messages} streaming={streaming} error={error} sessionId={sessionId} sendChat={sendChat} loadSession={loadSession} newConversation={newConversation} />
-          ) : <SecondaryPage page={activeNav} />}
+          ) : activeNav === '설정' ? <SettingsPage /> : <SecondaryPage page={activeNav} />}
         </div>
       </main>
     </div>

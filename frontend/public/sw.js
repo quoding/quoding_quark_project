@@ -1,7 +1,7 @@
 // QUARK PWA service worker — 앱 셸 정적 자산만 최소 캐싱.
 // 채팅 SSE(/api), MQTT WS(/mqtt), 그 외 실시간 데이터는 절대 가로채지 않는다.
 
-const CACHE_NAME = "quark-shell-v2";
+const CACHE_NAME = "quark-shell-v3";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192-v2.png", "/icons/icon-512-v2.png"];
 
 self.addEventListener("install", (event) => {
@@ -36,4 +36,25 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => caches.match(request).then((cached) => cached ?? Response.error()))
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = { title: "Quark", body: "" };
+  try {
+    if (event.data) payload = event.data.json();
+  } catch {
+    // non-JSON payload — fall back to defaults
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "Quark", {
+      body: payload.body || "",
+      icon: "/icons/icon-192-v2.png",
+      badge: "/icons/icon-192-v2.png",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.openWindow("/"));
 });
