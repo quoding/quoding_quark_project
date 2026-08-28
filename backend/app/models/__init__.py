@@ -6,6 +6,7 @@ Importing this package registers every model on ``Base.metadata`` so that
 from __future__ import annotations
 
 from app.models.agenda import Automation, Habit, Idea, Memo, Todo, WaterLog
+from app.models.chat import ChatConversation, ChatMessage
 from app.models.device import Device
 from app.models.memory import AgentMemory, DailyEpisode
 from app.models.research import ResearchNote
@@ -13,6 +14,8 @@ from app.models.research import ResearchNote
 __all__ = [
     "AgentMemory",
     "Automation",
+    "ChatConversation",
+    "ChatMessage",
     "DailyEpisode",
     "Device",
     "Habit",

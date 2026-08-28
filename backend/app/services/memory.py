@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.chat import ChatConversation, ChatMessage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -58,6 +59,30 @@ def to_message_history(turns: list[dict[str, str]]) -> list[ModelMessage]:
         else:
             history.append(ModelResponse(parts=[TextPart(content=content)]))
     return history
+
+
+# ── Durable: Postgres chat history (web UI conversation list) ───────────────
+
+_TITLE_MAX_LEN = 40
+
+
+async def persist_message(db: AsyncSession, session_id: str, role: str, content: str) -> None:
+    """Write-through record of a chat turn, separate from the Redis TTL buffer.
+
+    Creates the conversation row on first use (title from the first user
+    message) and bumps ``updated_at`` on every turn so the session list sorts
+    by recency.
+    """
+    conversation = await db.get(ChatConversation, session_id)
+    if conversation is None:
+        title = content[:_TITLE_MAX_LEN] + ("…" if len(content) > _TITLE_MAX_LEN else "")
+        conversation = ChatConversation(session_id=session_id, source="web", title=title)
+        db.add(conversation)
+    else:
+        conversation.updated_at = datetime.now(UTC)
+
+    db.add(ChatMessage(session_id=session_id, role=role, content=content))
+    await db.commit()
 
 
 # ── Long-term: pgvector RAG ──────────────────────────────────────────────────
