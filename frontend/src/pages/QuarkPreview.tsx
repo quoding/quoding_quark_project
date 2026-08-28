@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import {
@@ -12,12 +12,13 @@ import {
 import mascot from '@/assets/quark-mascot.png';
 import { QDATA } from '@/data/quarkData';
 import { useHomeStore } from '@/stores/homeStore';
-import { useQuarkChat } from '@/hooks/useQuarkChat';
+import { useQuarkChat, type ChatMessage } from '@/hooks/useQuarkChat';
 import { useMqttConnected } from '@/lib/mqttSingleton';
 import './QuarkPreview.css';
 
 const navItems = [
   { label: '홈', path: '', icon: LayoutDashboard },
+  { label: '채팅', path: 'chat', icon: MessageCircle },
   { label: '스마트 홈', path: 'iot', icon: Home },
   { label: '일정', path: 'agenda', icon: CalendarDays },
   { label: '모니터링', path: 'monitor', icon: MonitorCog },
@@ -43,13 +44,15 @@ interface SystemStats { cpu: number; ram: number; disk: number; temp: number | n
 interface ServiceEntry { name: string; status: 'up' | 'warn' | 'down'; latency: number | null; uptime?: string }
 interface DockerEntry { name: string; img: string; status: string; cpu: number; mem: number }
 interface GithubData { streak: number; today: number; week: number; lastCommit: string; error?: string }
-interface AutomationApi { id: number; name: string; trigger_desc: string; action_desc: string; icon: string; enabled: boolean; run_count: number }
+interface AutomationApi { id: number; name: string; trigger_desc: string; action_desc: string; icon: string; enabled: boolean; run_count: number; kind: 'macro' | 'cron' | 'mqtt_rule' }
 interface ResearchNote { id: number; arxiv_id: string; title: string; authors: string; summary_ko: string; url: string; keyword: string; citation_count: number; created_at: string }
 interface ForecastData { forecast: Array<{d:string;ico:string;pop:number;hi:number;lo:number}>; sunrise:string; sunset:string; day_len:string }
 interface NewsData { tag:string; title:string; src:string; time:string; url:string }
 interface MoodData { id:number; date:string; score:number; note:string|null }
 interface SleepData { id:number; date:string; hours:number; quality:number }
 interface CaffeineData { date:string; cups_today:number; mg_today:number; cutoff:string; bedtime:string; last_cup:string|null }
+interface ChatSessionSummary { session_id:string; title:string|null; updated_at:string }
+interface StoredChatMessage { role:'user'|'assistant'; content:string; created_at:string }
 interface PreviewWidgetConfig { active:string[]; sizes:Record<string,number>; previewVersion?:number }
 const PREVIEW_WIDGETS=[
   ['memo','빠른 메모'],['water','수분 섭취'],['pomodoro','포모도로'],['dday','D-Day'],['market','시세'],
@@ -174,9 +177,28 @@ function AutomationPage() {
   const create=useMutation({mutationFn:(body:{name:string;trigger_desc:string;action_desc:string;icon:string})=>axios.post('/api/automations',body),onSuccess:()=>qc.invalidateQueries({queryKey:['automations']})});
   const addRule=()=>{const name=window.prompt('자동화 이름을 입력하세요.');if(!name?.trim())return;const trigger=window.prompt('트리거(IF)를 입력하세요.');if(!trigger?.trim())return;const action=window.prompt('동작(THEN)을 입력하세요.');if(action?.trim())create.mutate({name:name.trim(),trigger_desc:trigger.trim(),action_desc:action.trim(),icon:'zap'})};
   const totalRuns=rules.reduce((sum,rule)=>sum+rule.run_count,0);
+  const systemRules=rules.filter(r=>r.kind!=='macro');
+  const macroRules=rules.filter(r=>r.kind==='macro');
+  const renderRule=(rule:AutomationApi,index:number)=>(
+    <article className={'qv2-card qv2-rule '+(rule.enabled?'enabled':'')} key={rule.id}>
+      <div className="qv2-rule-head">
+        <span>{index%2?<Moon/>:<Zap/>}</span>
+        <div><strong>{rule.name}</strong><small>{rule.run_count}회 실행됨</small></div>
+        {rule.kind==='macro'
+          ? <button aria-label="삭제" onClick={()=>window.confirm(`'${rule.name}' 자동화를 삭제할까요?`)&&remove.mutate(rule.id)}><Trash2/></button>
+          : <span className="qv2-rule-badge">시스템</span>}
+        <button disabled={toggle.isPending} onClick={()=>toggle.mutate(rule.id)}>{rule.enabled?<ToggleRight/>:<ToggleLeft/>}</button>
+      </div>
+      <div className="qv2-flow"><div><span>IF</span><p>{rule.trigger_desc}</p></div><b>→</b><div><span>THEN</span><p>{rule.action_desc}</p></div></div>
+      <footer><i className={rule.enabled?'on':''}/>{rule.enabled?'활성':'일시 정지'}<span>실행 {rule.run_count}회</span></footer>
+    </article>
+  );
   return <><PageIntro eyebrow="WORKFLOWS" title="자동화" description="반복되는 일은 Quark가 알아서 처리하도록 맡겨두세요." action="새 자동화" onAction={addRule} />
     <section className="qv2-auto-summary"><article className="qv2-card"><span><Zap/></span><div><strong>{rules.filter(r=>r.enabled).length}<b> / {rules.length}</b></strong><small>활성 자동화</small></div></article><article className="qv2-card"><span><Play/></span><div><strong>{totalRuns.toLocaleString('ko-KR')}</strong><small>누적 실행</small></div></article><article className="qv2-card"><span><Activity/></span><div><strong>{isLoading?'—':'LIVE'}</strong><small>API 연결 상태</small></div></article></section>
-    <section className="qv2-rule-grid">{rules.map((rule,index)=><article className={'qv2-card qv2-rule '+(rule.enabled?'enabled':'')} key={rule.id}><div className="qv2-rule-head"><span>{index%2?<Moon/>:<Zap/>}</span><div><strong>{rule.name}</strong><small>{rule.run_count}회 실행됨</small></div><button aria-label="삭제" onClick={()=>window.confirm(`'${rule.name}' 자동화를 삭제할까요?`)&&remove.mutate(rule.id)}><Trash2/></button><button disabled={toggle.isPending} onClick={()=>toggle.mutate(rule.id)}>{rule.enabled?<ToggleRight/>:<ToggleLeft/>}</button></div><div className="qv2-flow"><div><span>IF</span><p>{rule.trigger_desc}</p></div><b>→</b><div><span>THEN</span><p>{rule.action_desc}</p></div></div><footer><i className={rule.enabled?'on':''}/>{rule.enabled?'활성':'일시 정지'}<span>실행 {rule.run_count}회</span></footer></article>)}</section>
+    <section className="qv2-section-head"><div><h2>시스템 자동화</h2><p>Quark가 기본 제공하는 자동화 — 껐다 켤 수만 있어요.</p></div></section>
+    <section className="qv2-rule-grid">{systemRules.map(renderRule)}</section>
+    <section className="qv2-section-head"><div><h2>내 매크로</h2><p>채팅에서 "매크로로 저장해줘"로 만든 나만의 자동화입니다.</p></div></section>
+    <section className="qv2-rule-grid">{macroRules.length?macroRules.map(renderRule):<p className="qv2-chat-empty">아직 저장한 매크로가 없습니다.</p>}</section>
   </>;
 }
 
@@ -189,6 +211,74 @@ function ResearchPage() {
     {run.data&&<div className="qv2-run-result">[{run.data.keywords.join(', ')}] {run.data.fetched}건 확인 · 새 논문 {run.data.saved}건 저장</div>}
     <section className="qv2-library-head"><div><h2>저장된 논문</h2><p>{isLoading?'불러오는 중':`${papers.length}개의 연구 자료`}</p></div></section><section className="qv2-paper-grid">{papers.map(paper=><article className="qv2-card" key={paper.id}><div><span>{paper.keyword}</span><a href={paper.url} target="_blank" rel="noreferrer" aria-label="논문 열기"><ExternalLink/></a></div><h3>{paper.title}</h3><small>{paper.authors} · {new Date(paper.created_at).getFullYear()}</small><p>{paper.summary_ko}</p><footer><span>인용 {paper.citation_count}</span><span>{paper.arxiv_id}</span></footer></article>)}</section>
   </>;
+}
+
+interface ChatPageProps {
+  messages: ChatMessage[]; streaming: boolean; error: string | null; sessionId: string;
+  sendChat: (text: string) => Promise<void>;
+  loadSession: (id: string, initialMessages: ChatMessage[]) => void;
+  newConversation: () => void;
+}
+
+function ChatPage({ messages, streaming, error, sessionId, sendChat, loadSession, newConversation }: ChatPageProps) {
+  const qc = useQueryClient();
+  const [input, setInput] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: sessions = [] } = useQuery<ChatSessionSummary[]>({ queryKey: ['chatSessions'], queryFn: () => axios.get('/api/chat/sessions').then(r => r.data), refetchInterval: 15_000 });
+  const deleteSession = useMutation({ mutationFn: (id: string) => axios.delete(`/api/chat/sessions/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ['chatSessions'] }) });
+
+  const openSession = async (id: string) => {
+    setHistoryOpen(false);
+    if (id === sessionId) return;
+    const res = await axios.get<StoredChatMessage[]>(`/api/chat/sessions/${id}/messages`);
+    loadSession(id, res.data.map(m => ({ id: crypto.randomUUID(), role: m.role, content: m.content, ts: Date.parse(m.created_at) })));
+  };
+
+  const handleDelete = (id: string, e: MouseEvent) => {
+    e.stopPropagation();
+    deleteSession.mutate(id);
+    if (id === sessionId) newConversation();
+  };
+
+  const send = () => {
+    const trimmed = input.trim();
+    if (!trimmed || streaming) return;
+    void sendChat(trimmed);
+    setInput('');
+  };
+
+  return (
+    <div className="qv2-chat-page">
+      <aside className={'qv2-chat-sidebar' + (historyOpen ? ' is-open' : '')}>
+        <button className="qv2-chat-new" onClick={() => { newConversation(); setHistoryOpen(false); }}><Plus /> 새 대화</button>
+        <div className="qv2-chat-session-list">
+          {sessions.length ? sessions.map(s => (
+            <button key={s.session_id} className={s.session_id === sessionId ? 'active' : ''} onClick={() => openSession(s.session_id)}>
+              <span>{s.title || '새 대화'}</span>
+              <small>{new Date(s.updated_at).toLocaleDateString('ko-KR')}</small>
+              <i onClick={e => handleDelete(s.session_id, e)}><Trash2 /></i>
+            </button>
+          )) : <p className="qv2-chat-empty">지난 대화가 없습니다.</p>}
+        </div>
+      </aside>
+      {historyOpen && <button className="qv2-scrim" onClick={() => setHistoryOpen(false)} aria-label="기록 닫기" />}
+      <div className="qv2-chat-main">
+        <header className="qv2-chat-main-head">
+          <button className="qv2-chat-history-toggle" onClick={() => setHistoryOpen(v => !v)}><Clock3 /> 기록</button>
+        </header>
+        <div className="qv2-chat-messages">
+          {messages.length ? messages.map(item => (
+            <div className={item.role} key={item.id}><span>{item.role === 'user' ? '나' : 'Quark'}</span><p>{item.content || '생각 중…'}</p></div>
+          )) : <p className="qv2-chat-empty">무엇이든 물어보세요.</p>}
+        </div>
+        {error && <p className="qv2-chat-error">연결 오류: {error}</p>}
+        <div className="qv2-chat-composer">
+          <input value={input} disabled={streaming} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()} placeholder={streaming ? '쿼크가 생각 중이에요...' : '메시지 보내기...'} />
+          <button className="send" onClick={send} aria-label="보내기"><Send /></button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SecondaryPage({ page }: { page: string }) {
@@ -253,7 +343,6 @@ export default function QuarkPreview() {
   const [activeNav, setActiveNav] = useState(pageFromPath);
   const [menuOpen, setMenuOpen] = useState(false);
   const [message, setMessage] = useState('');
-  const [showChatHistory,setShowChatHistory]=useState(false);
   const [widgetEdit,setWidgetEdit]=useState(false);
   const [widgetConfig,setWidgetConfig]=useState<PreviewWidgetConfig>(loadPreviewWidgets);
   const [dragWidget,setDragWidget]=useState<string|null>(null);
@@ -266,7 +355,7 @@ export default function QuarkPreview() {
   const appliances=useHomeStore((s)=>s.appliances);
   const toggleAppliance=useHomeStore((s)=>s.toggleAppliance);
   const handleCommand=useHomeStore((s)=>s.handleCommand);
-  const {messages,streaming,error,send:sendChat}=useQuarkChat();
+  const {messages,streaming,error,sessionId,send:sendChat,clear:newConversation,loadSession}=useQuarkChat();
   const todayStr=useMemo(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`},[]);
   const {data:weather}=useQuery<{temp:number;label:string;pm25:number;aqi_grade:string;error?:string}>({queryKey:['weather'],queryFn:()=>axios.get('/api/system/weather').then(r=>r.data),staleTime:600_000});
   const {data:todayEvents=[]}=useQuery<ApiEvent[]>({queryKey:['events',todayStr],queryFn:()=>axios.get(`/api/agenda/events?date_filter=${todayStr}`).then(r=>r.data),refetchInterval:30_000});
@@ -297,6 +386,19 @@ export default function QuarkPreview() {
     localStorage.setItem('quark-install-hint-dismissed', '1');
     setShowInstallHint(false);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get<StoredChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`)
+      .then(res => {
+        if (cancelled || !res.data.length) return;
+        loadSession(sessionId, res.data.map(m => ({ id: crypto.randomUUID(), role: m.role, content: m.content, ts: Date.parse(m.created_at) })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // 마운트 시 한 번만 — 저장된 세션이 있으면 지난 대화를 복원
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const navigate = (label: string, path: string) => {
     window.history.pushState({}, '', `/${path}`);
@@ -378,9 +480,9 @@ export default function QuarkPreview() {
 
           <section className="qv2-summary-grid">
             <article className="qv2-hero-card">
-              <div className="qv2-hero-top"><button onClick={()=>setShowChatHistory(value=>!value)}>{showChatHistory?'요약 보기':'대화 펼치기'}</button><span><i /> QUARK ONLINE</span></div>
+              <div className="qv2-hero-top"><button onClick={()=>navigate('채팅','chat')}>채팅 열기</button><span><i /> QUARK ONLINE</span></div>
               <h2>무엇을 도와드릴까요?</h2>
-              {showChatHistory?<div className="qv2-chat-history">{messages.length?messages.map(item=><div className={item.role} key={item.id}><span>{item.role==='user'?'나':'Quark'}</span><p>{item.content||'생각 중…'}</p></div>):<p>아직 대화가 없습니다.</p>}</div>:<p>{error?`연결 오류: ${error}`:latestAssistant??'오늘 필요한 일을 알려주세요. 집 제어부터 일정 정리까지 함께할게요.'}</p>}
+              <p>{error?`연결 오류: ${error}`:latestAssistant??'오늘 필요한 일을 알려주세요. 집 제어부터 일정 정리까지 함께할게요.'}</p>
               <div className="qv2-command-box">
                 <Bot />
                 <input value={message} disabled={streaming} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder={streaming?'쿼크가 생각 중이에요...':'쿼크에게 메시지 보내기...'} />
@@ -436,7 +538,9 @@ export default function QuarkPreview() {
           </section>
           <HomeUtilities config={widgetConfig} />
           <HomeExtras config={widgetConfig} />
-          </> : <SecondaryPage page={activeNav} />}
+          </> : activeNav === '채팅' ? (
+            <ChatPage messages={messages} streaming={streaming} error={error} sessionId={sessionId} sendChat={sendChat} loadSession={loadSession} newConversation={newConversation} />
+          ) : <SecondaryPage page={activeNav} />}
         </div>
       </main>
     </div>

@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
+const SESSION_STORAGE_KEY = "quark-chat-session";
 
 export interface ChatMessage {
   id: string;
@@ -9,12 +10,28 @@ export interface ChatMessage {
   ts: number;
 }
 
-export function useQuarkChat(sessionId?: string) {
-  const sid = useRef(sessionId ?? crypto.randomUUID());
+function loadStoredSessionId(): string {
+  try {
+    return localStorage.getItem(SESSION_STORAGE_KEY) || crypto.randomUUID();
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+export function useQuarkChat() {
+  const [sessionId, setSessionId] = useState(loadStoredSessionId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    } catch {
+      // localStorage unavailable — session just won't survive a reload
+    }
+  }, [sessionId]);
 
   const send = useCallback(async (text: string) => {
     if (streaming) return;
@@ -41,7 +58,7 @@ export function useQuarkChat(sessionId?: string) {
       const res = await fetch(`${API_URL}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sid.current, message: text }),
+        body: JSON.stringify({ session_id: sessionId, message: text }),
         signal: abortRef.current.signal,
       });
 
@@ -81,7 +98,7 @@ export function useQuarkChat(sessionId?: string) {
     } finally {
       setStreaming(false);
     }
-  }, [streaming]);
+  }, [streaming, sessionId]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -91,8 +108,14 @@ export function useQuarkChat(sessionId?: string) {
   const clear = useCallback(() => {
     setMessages([]);
     setError(null);
-    sid.current = crypto.randomUUID();
+    setSessionId(crypto.randomUUID());
   }, []);
 
-  return { messages, streaming, error, send, stop, clear };
+  const loadSession = useCallback((id: string, initialMessages: ChatMessage[]) => {
+    setSessionId(id);
+    setMessages(initialMessages);
+    setError(null);
+  }, []);
+
+  return { messages, streaming, error, sessionId, send, stop, clear, loadSession };
 }
