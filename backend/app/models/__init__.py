@@ -9,6 +9,7 @@ from app.models.agenda import Automation, Habit, Idea, Memo, Todo, WaterLog
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.device import Device
 from app.models.memory import AgentMemory, DailyEpisode
+from app.models.push import PushSubscription
 from app.models.research import ResearchNote
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "Habit",
     "Idea",
     "Memo",
+    "PushSubscription",
     "ResearchNote",
     "Todo",
     "WaterLog",

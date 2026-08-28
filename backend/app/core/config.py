@@ -131,6 +131,18 @@ class Settings(BaseSettings):
     def host_helper_token(self) -> str:
         return _read_secret("host_helper_token") or ""
 
+    vapid_subject: str = "mailto:quoding@example.com"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def vapid_private_key(self) -> str:
+        return _read_secret("vapid_private_key") or ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def vapid_public_key(self) -> str:
+        return _read_secret("vapid_public_key") or ""
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def host_helper_base_url(self) -> str:

@@ -50,3 +50,6 @@ docker==7.*
 
 # RSS parser
 feedparser==6.*
+
+# Web push notifications (VAPID)
+pywebpush==2.*
