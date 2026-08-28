@@ -410,6 +410,10 @@ export default function QuarkPreview() {
     () => new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' }).format(now),
     [now],
   );
+  const shortDateLabel = useMemo(
+    () => new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric' }).format(now),
+    [now],
+  );
 
   const sendMessage = (preset?: string) => {
     const trimmed = (preset??message).trim();
@@ -464,7 +468,7 @@ export default function QuarkPreview() {
           <label className="qv2-search"><Search /><input placeholder="무엇이든 검색하세요" /><kbd>⌘ K</kbd></label>
           <div className="qv2-top-actions">
             <span className="qv2-weather"><CloudSun /> 서울 {weather?.error?QDATA.weather.temp:(weather?.temp??QDATA.weather.temp)}°</span>
-            <button aria-label={mqttConnected?'MQTT 연결됨':'MQTT 연결 끊김'}><Bell /><i style={{background:mqttConnected?'#55a477':'#b86555'}} /></button>
+            <button aria-label={mqttConnected?'MQTT 연결됨 · 알림 보기':'MQTT 연결 끊김 · 알림 보기'} onClick={()=>navigate('일정','agenda')}><Bell /><i style={{background:mqttConnected?'#55a477':'#b86555'}} /></button>
             <button aria-label="도움말"><MessageCircle /></button>
           </div>
         </header>
@@ -504,7 +508,7 @@ export default function QuarkPreview() {
           </section>
 
           <section className="qv2-section">
-            <div className="qv2-section-head"><div><h2>빠른 실행</h2><p>자주 사용하는 장면을 한 번에 실행하세요.</p></div><button>장면 관리 <ChevronDown /></button></div>
+            <div className="qv2-section-head"><div><h2>빠른 실행</h2><p>자주 사용하는 장면을 한 번에 실행하세요.</p></div><button onClick={()=>navigate('스마트 홈','iot')}>장면 관리 <ChevronDown /></button></div>
             <div className="qv2-scenes">
               {scenes.map(({ id,label, icon: SceneIcon, tint }) => <button key={id} className={(activeScene === id ? 'active ' : '') + tint} onClick={() => applyScene(id)}><span><SceneIcon /></span><div><strong>{label} 모드</strong><small>{activeScene === id ? '현재 실행 중' : '탭하여 실행'}</small></div>{activeScene === id && <Check />}</button>)}
               <button className="qv2-add-scene" onClick={()=>navigate('스마트 홈','iot')}><Plus /><span>장면 관리</span></button>
@@ -520,7 +524,7 @@ export default function QuarkPreview() {
             </article>
 
             <article className="qv2-card qv2-agenda">
-              <div className="qv2-card-head"><div><span className="qv2-eyebrow">TODAY</span><h3>다가오는 일정</h3></div><button className="qv2-date-button">8월 26일</button></div>
+              <div className="qv2-card-head"><div><span className="qv2-eyebrow">TODAY</span><h3>다가오는 일정</h3></div><button className="qv2-date-button" onClick={()=>navigate('일정','agenda')}>{shortDateLabel}</button></div>
               <div className="qv2-timeline">
                 {todayEvents.slice(0,3).map((item, index) => <div key={item.id}><time>{item.all_day?'종일':item.scheduled_at.slice(11,16)}</time><span className={index === 0 ? 'hot' : ''} /><div><strong>{item.title}</strong><small>Google Calendar</small></div></div>)}
               </div>
