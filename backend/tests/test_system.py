@@ -183,3 +183,18 @@ async def test_minecraft_service_entry_states() -> None:
             entry = await _minecraft_entry()
         assert (entry["status"], entry["label"]) == (status, label)
     assert "3시간 2분째" in entry["detail"]
+
+
+async def test_minecraft_agent_tools() -> None:
+    from app.tools import home
+
+    with patch("app.tools.home.minecraft_afk", AsyncMock(return_value={"enabled": True})) as m:
+        assert "시작" in await home.start_minecraft_afk(MagicMock())
+        m.assert_awaited_with("start")
+        assert "껐어" in await home.stop_minecraft_afk(MagicMock())
+        m.assert_awaited_with("stop")
+    with patch("app.tools.home.minecraft_afk", AsyncMock(return_value=None)):
+        assert "실패" in await home.start_minecraft_afk(MagicMock())
+    entry = {"label": "잠수 중", "detail": "띵타이쿤 접속 · 2시간 0분째"}
+    with patch("app.tools.home._minecraft_entry", AsyncMock(return_value=entry)):
+        assert await home.get_minecraft_afk_status(MagicMock()) == "잠수 중 — 띵타이쿤 접속 · 2시간 0분째"

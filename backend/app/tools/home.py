@@ -17,7 +17,8 @@ from pydantic_ai import RunContext
 
 from app.agents.deps import QuarkDeps
 from app.core.config import get_settings
-from app.services.host_helper import reboot_host, wake_on_lan
+from app.services.host_helper import minecraft_afk, reboot_host, wake_on_lan
+from app.services.service_health import _minecraft_entry
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -124,6 +125,28 @@ async def wake_laptop(ctx: RunContext[QuarkDeps]) -> str:
     return "노트북 깨우는 신호 보냈어 — 잠시 후 켜질 거야 💻" if ok else "WoL 신호 전송에 실패했어 — 호스트 헬퍼 상태를 확인해줘."
 
 
+async def start_minecraft_afk(ctx: RunContext[QuarkDeps]) -> str:
+    """미니PC에서 마인크래프트(띵타이쿤) 잠수를 시작한다. 게임 실행→서버 접속→/잠수까지 자동 (2~5분 소요)."""
+    st = await minecraft_afk("start")
+    if st is None:
+        return "마크 잠수 시작 요청에 실패했어 — 호스트 헬퍼 상태를 확인해줘."
+    return "마크 잠수 시작할게 — 게임 켜고 접속해서 /잠수까지 2~5분 걸려 ⛏️"
+
+
+async def stop_minecraft_afk(ctx: RunContext[QuarkDeps]) -> str:
+    """미니PC의 마인크래프트 잠수를 중지한다 (게임 종료, 자동 재실행도 멈춤)."""
+    st = await minecraft_afk("stop")
+    if st is None:
+        return "마크 잠수 중지 요청에 실패했어 — 호스트 헬퍼 상태를 확인해줘."
+    return "마크 잠수 껐어 — 자동 재실행도 멈췄어."
+
+
+async def get_minecraft_afk_status(ctx: RunContext[QuarkDeps]) -> str:
+    """미니PC 마인크래프트 잠수 상태를 확인한다 (제어하지 않음)."""
+    e = await _minecraft_entry()
+    return f"{e['label']} — {e['detail']}" if e.get("detail") else e["label"]
+
+
 async def get_home_state(ctx: RunContext[QuarkDeps]) -> dict[str, Any]:
     """현재 집 상태 스냅샷을 읽는다 (제어 명령은 보내지 않음).
 
@@ -151,6 +174,9 @@ HOME_TOOLS = (
     water_plant,
     reboot_mini_pc,
     wake_laptop,
+    start_minecraft_afk,
+    stop_minecraft_afk,
+    get_minecraft_afk_status,
     get_home_state,
 )
 
