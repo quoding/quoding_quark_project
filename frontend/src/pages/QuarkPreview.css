@@ -339,7 +339,7 @@
 .qv2-service-row > i.warn { background:#d6a54d; }.qv2-service-row > i.down { background:#cf6b62; }
 .qv2-service-row div { display:grid; }.qv2-service-row strong { font-size:9px; }.qv2-service-row small { margin-top:3px; color:#a0a7a1; font-size:7px; }
 .qv2-service-row > span { color:#879088; font-size:8px; text-align:right; }
-.qv2-service-row > b { padding:4px; border-radius:6px; color:#3b7757; background:#edf5f0; font-size:7px; text-align:center; }.qv2-service-row > b.warn { color:#99742e; background:#faf3e4; }.qv2-service-row > b.down { color:#a7574f; background:#faecea; }
+.qv2-service-row > b { padding:4px; border-radius:6px; color:#3b7757; background:#edf5f0; font-size:7px; text-align:center; }.qv2-service-row > b.warn { color:#99742e; background:#faf3e4; }.qv2-service-row > b.down { color:#a7574f; background:#faecea; } .qv2-service-row > i.off { background:#b9c0ba; } .qv2-service-row > b.off { color:#7d867f; background:#f1f3f0; }
 .qv2-docker > .qv2-card-head > svg { width:18px; color:#668072; }
 .qv2-docker > div:not(.qv2-card-head) { height:51px; display:grid; grid-template-columns:8px 1fr auto; align-items:center; gap:10px; border-bottom:1px solid #f0f2ef; }
 .qv2-docker > div > span.stopped { background:#bdc3be; }.qv2-docker > div > div { display:grid; }.qv2-docker strong { font-size:9px; }.qv2-docker small { color:#a0a7a1; font-size:7px; margin-top:3px; }.qv2-docker p { color:#879088; font-size:7px; }

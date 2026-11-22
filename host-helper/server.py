@@ -49,6 +49,30 @@ def _detect_bind_host() -> str:
 
 BIND_HOST = _detect_bind_host()
 
+# Minecraft AFK watchdog (~/.local/share/mc-watchdog) 제어
+MC_PAUSE = Path.home() / ".mc-watchdog-pause"
+MC_PATTERN = "net.minecraft.client.main.Main|net.fabricmc.loader.impl.launch.knot.KnotClient"
+
+
+def mc_status() -> dict:
+    r = subprocess.run(["pgrep", "-f", MC_PATTERN], capture_output=True, text=True)
+    pids = r.stdout.split()
+    status = {"running": bool(pids), "enabled": not MC_PAUSE.exists(),
+              "connected": False, "uptime_sec": None}
+    if pids:
+        pid = pids[0]
+        et = subprocess.run(["ps", "-o", "etimes=", "-p", pid], capture_output=True, text=True)
+        status["uptime_sec"] = int(et.stdout.strip() or 0)
+        # 게임 서버 연결 = java 프로세스의 ESTABLISHED TCP 중 웹(80/443)이 아닌 것
+        ss = subprocess.run(["ss", "-tnpH", "state", "established"], capture_output=True, text=True)
+        for line in ss.stdout.splitlines():
+            if f"pid={pid}," in line:
+                remote_port = line.split()[3].rsplit(":", 1)[-1]
+                if remote_port not in ("80", "443"):
+                    status["connected"] = True
+                    break
+    return status
+
 
 def send_magic_packet(mac: str) -> None:
     mac_bytes = bytes.fromhex(mac.replace(":", "").replace("-", ""))
@@ -83,6 +107,21 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/reboot":
             subprocess.Popen(["sudo", "/usr/sbin/reboot"])
             self._reply(200, {"ok": True})
+            return
+
+        if self.path == "/mc/status":
+            self._reply(200, mc_status())
+            return
+
+        if self.path == "/mc/start":
+            MC_PAUSE.unlink(missing_ok=True)   # 감시 재개 → 1~2분 내 게임 실행 + /잠수
+            self._reply(200, mc_status())
+            return
+
+        if self.path == "/mc/stop":
+            MC_PAUSE.touch()                   # 감시 중지 후 게임 종료
+            subprocess.run(["pkill", "-f", MC_PATTERN])
+            self._reply(200, {"running": False, "enabled": False})
             return
 
         if self.path == "/wol":

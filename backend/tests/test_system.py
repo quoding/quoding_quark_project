@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
@@ -139,3 +139,47 @@ async def test_weather_endpoint_graceful_fallback() -> None:
             resp = await c.get("/api/system/weather")
     assert resp.status_code == 200
     assert "error" in resp.json()
+
+
+# ── minecraft afk (host helper) ──────────────────────────────────────────────
+
+async def test_minecraft_afk_status_endpoint() -> None:
+    mock = AsyncMock(return_value={"running": True, "enabled": True})
+    with patch("app.routers.system.minecraft_afk", mock):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/system/minecraft-afk")
+    assert resp.json() == {"running": True, "enabled": True}
+    mock.assert_awaited_once_with("status")
+
+
+async def test_minecraft_afk_control_rejects_unknown_action() -> None:
+    mock = AsyncMock()
+    with patch("app.routers.system.minecraft_afk", mock):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/api/system/minecraft-afk/reboot")
+    assert resp.json() == {"error": "invalid_action"}
+    mock.assert_not_awaited()
+
+
+async def test_minecraft_afk_control_helper_unreachable() -> None:
+    with patch("app.routers.system.minecraft_afk", AsyncMock(return_value=None)):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/api/system/minecraft-afk/stop")
+    assert resp.json() == {"error": "host_helper_unreachable"}
+
+
+async def test_minecraft_service_entry_states() -> None:
+    from app.services.service_health import _minecraft_entry
+
+    cases = [
+        (None, "down", "확인 불가"),
+        ({"enabled": False, "running": False}, "off", "꺼둠"),
+        ({"enabled": True, "running": False}, "warn", "재실행 중"),
+        ({"enabled": True, "running": True, "connected": False, "uptime_sec": 30}, "warn", "재접속 중"),
+        ({"enabled": True, "running": True, "connected": True, "uptime_sec": 3 * 3600 + 120}, "up", "잠수 중"),
+    ]
+    for st, status, label in cases:
+        with patch("app.services.host_helper.minecraft_afk", AsyncMock(return_value=st)):
+            entry = await _minecraft_entry()
+        assert (entry["status"], entry["label"]) == (status, label)
+    assert "3시간 2분째" in entry["detail"]

@@ -45,3 +45,16 @@ async def wake_on_lan(mac: str) -> bool:
         except httpx.HTTPError as exc:
             logger.warning("host helper wol failed: %s", exc)
             return False
+
+
+async def minecraft_afk(action: str) -> dict | None:
+    """Minecraft 잠수 감시 제어. action: status | start | stop. 실패 시 None."""
+    settings = get_settings()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(f"{settings.host_helper_base_url}/mc/{action}", headers=_headers())
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPError as exc:
+            logger.warning("host helper mc/%s failed: %s", action, exc)
+            return None

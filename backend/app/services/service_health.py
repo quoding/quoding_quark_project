@@ -58,6 +58,32 @@ async def _check_tcp(host: str, port: int) -> tuple[str, int | None]:
         return "down", None
 
 
+def _fmt_uptime(sec: int | None) -> str:
+    if not sec:
+        return ""
+    h, m = divmod(sec // 60, 60)
+    return f" · {h}시간 {m}분째" if h else f" · {m}분째"
+
+
+async def _minecraft_entry() -> dict[str, Any]:
+    """Minecraft 잠수 상태를 서비스 상태 카드용 항목으로 변환."""
+    from app.services.host_helper import minecraft_afk
+
+    st = await minecraft_afk("status")
+    entry: dict[str, Any] = {"name": "minecraft 잠수", "latency": None}
+    if st is None:
+        return {**entry, "status": "down", "label": "확인 불가", "detail": "호스트 헬퍼 응답 없음"}
+    if not st.get("enabled"):
+        return {**entry, "status": "off", "label": "꺼둠", "detail": "Quark에서 중지함"}
+    if not st.get("running"):
+        return {**entry, "status": "warn", "label": "재실행 중", "detail": "게임 꺼짐 · 자동 재실행 대기"}
+    if not st.get("connected"):
+        return {**entry, "status": "warn", "label": "재접속 중",
+                "detail": "서버 연결 끊김 · 재접속 시도" + _fmt_uptime(st.get("uptime_sec"))}
+    return {**entry, "status": "up", "label": "잠수 중",
+            "detail": "띵타이쿤 접속" + _fmt_uptime(st.get("uptime_sec"))}
+
+
 async def get_service_health() -> list[dict[str, Any]]:
     """Check all internal services and return health list (5s cache)."""
     if _cache.get("ts") and time.monotonic() - _cache["ts"] < _CACHE_TTL:
@@ -70,7 +96,7 @@ async def get_service_health() -> list[dict[str, Any]]:
             status, latency = await _check_tcp(svc["host"], svc["port"])
         return {"name": svc["name"], "status": status, "latency": latency}
 
-    results = await asyncio.gather(*[_probe(s) for s in _get_services()])
+    results = await asyncio.gather(*[_probe(s) for s in _get_services()], _minecraft_entry())
     data = list(results)
     _cache["data"] = data
     _cache["ts"] = time.monotonic()
