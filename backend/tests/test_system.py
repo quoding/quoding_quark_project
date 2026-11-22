@@ -198,3 +198,16 @@ async def test_minecraft_agent_tools() -> None:
     entry = {"label": "잠수 중", "detail": "띵타이쿤 접속 · 2시간 0분째"}
     with patch("app.tools.home._minecraft_entry", AsyncMock(return_value=entry)):
         assert await home.get_minecraft_afk_status(MagicMock()) == "잠수 중 — 띵타이쿤 접속 · 2시간 0분째"
+
+
+async def test_minecraft_screenshot_endpoint() -> None:
+    with patch("app.routers.system.minecraft_screenshot", AsyncMock(return_value=b"\xff\xd8jpeg")):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/system/minecraft-afk/screenshot")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert resp.content == b"\xff\xd8jpeg"
+    with patch("app.routers.system.minecraft_screenshot", AsyncMock(return_value=None)):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.get("/api/system/minecraft-afk/screenshot")
+    assert resp.status_code == 404

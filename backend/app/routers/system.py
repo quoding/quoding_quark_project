@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from app.core.config import get_settings
 from app.services.docker_stats import get_docker_stats
 from app.services.embeddings import is_embedding_enabled, set_embedding_enabled
 from app.services.github_stats import get_github_stats
-from app.services.host_helper import minecraft_afk, reboot_host, wake_on_lan
+from app.services.host_helper import minecraft_afk, minecraft_screenshot, reboot_host, wake_on_lan
 from app.services.market import get_market_data
 from app.services.news import get_news
 from app.services.notify import (
@@ -147,6 +147,15 @@ async def wake_laptop_endpoint() -> dict[str, bool]:
 async def minecraft_afk_status() -> dict[str, Any]:
     """Minecraft 잠수 상태 (게임 실행 여부, 자동 재실행 감시 여부)."""
     return await minecraft_afk("status") or {"error": "host_helper_unreachable"}
+
+
+@router.get("/minecraft-afk/screenshot")
+async def minecraft_afk_screenshot() -> Response:
+    """게임 화면을 지금 찍어서 JPEG로 반환 (서버엔 최신 1장만 보관)."""
+    data = await minecraft_screenshot()
+    if data is None:
+        return Response(status_code=404)
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/minecraft-afk/{action}")

@@ -494,3 +494,8 @@
   .qv2-extra-grid { grid-template-columns:1fr; }.qv2-forecast-card,.qv2-news-card,.qv2-extra-grid > article.wide { grid-column:auto!important; }.qv2-widget-editor > div { grid-template-columns:1fr; }
   .qv2-week-view { overflow-x:auto; grid-template-columns:repeat(7,80px); }.qv2-camera-tabs { grid-template-columns:1fr; }
 }
+
+.qv2-mc-shot { display: grid; gap: 6px; }
+.qv2-mc-shot img { width: 100%; border-radius: 10px; display: block; }
+.qv2-mc-shot small { opacity: .7; }
+.qv2-system-actions .qv2-mc-shot .qv2-link { all: unset; cursor: pointer; text-decoration: underline; }

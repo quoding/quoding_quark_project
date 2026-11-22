@@ -58,3 +58,16 @@ async def minecraft_afk(action: str) -> dict | None:
         except httpx.HTTPError as exc:
             logger.warning("host helper mc/%s failed: %s", action, exc)
             return None
+
+
+async def minecraft_screenshot() -> bytes | None:
+    """게임 화면 JPEG를 새로 찍어 받아온다. 창이 없거나 실패 시 None."""
+    settings = get_settings()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.post(f"{settings.host_helper_base_url}/mc/screenshot", headers=_headers())
+            resp.raise_for_status()
+            return resp.content
+        except httpx.HTTPError as exc:
+            logger.warning("host helper mc/screenshot failed: %s", exc)
+            return None

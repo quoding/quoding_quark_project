@@ -74,6 +74,30 @@ def mc_status() -> dict:
     return status
 
 
+MC_SHOT = Path.home() / ".local/share/mc-watchdog/screen.jpg"
+
+
+def mc_screenshot() -> bytes | None:
+    """게임 창을 찍어 screen.jpg 한 장에 덮어쓴다 (이전 사진은 남지 않음). 창이 없으면 None."""
+    from PIL import ImageGrab   # 무거운 import는 필요할 때만
+
+    env = {"DISPLAY": ":0", "HOME": str(Path.home())}
+    r = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", "^Minecraft"],
+                       capture_output=True, text=True, env=env)
+    wids = r.stdout.split()
+    if not wids:
+        return None
+    g = subprocess.run(["xdotool", "getwindowgeometry", "--shell", wids[0]],
+                       capture_output=True, text=True, env=env)
+    geo = dict(line.split("=", 1) for line in g.stdout.splitlines() if "=" in line)
+    x, y, w, h = (int(geo[k]) for k in ("X", "Y", "WIDTH", "HEIGHT"))
+    img = ImageGrab.grab(bbox=(x, y, x + w, y + h), xdisplay=":0").convert("RGB")
+    tmp = MC_SHOT.with_suffix(".tmp")
+    img.save(tmp, "JPEG", quality=70)
+    tmp.replace(MC_SHOT)                   # 원자적 교체 → 항상 1장만 유지
+    return MC_SHOT.read_bytes()
+
+
 def send_magic_packet(mac: str) -> None:
     mac_bytes = bytes.fromhex(mac.replace(":", "").replace("-", ""))
     if len(mac_bytes) != 6:
@@ -111,6 +135,22 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/mc/status":
             self._reply(200, mc_status())
+            return
+
+        if self.path == "/mc/screenshot":
+            try:
+                data = mc_screenshot()
+            except Exception as exc:          # X 접근 실패 등
+                self._reply(500, {"error": str(exc)})
+                return
+            if data is None:
+                self._reply(404, {"error": "no_window"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
 
         if self.path == "/mc/start":
